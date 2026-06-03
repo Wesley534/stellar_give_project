@@ -33,5 +33,13 @@ coverage/
 # OS and editor files
 .DS_Store
 Thumbs.db
-.idea/
 .vscode/
+.idea/
+
+# Project specific
+*.txt
+*.log
+dist/
+node_modules/
+.env*
+! .env.example

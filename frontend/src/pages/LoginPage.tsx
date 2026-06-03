@@ -1,58 +1,178 @@
-import type { FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useAuth, type Role } from '../context/AuthContext'
+import { BlockchainIcon } from '../components/BlockchainIcon'
 
-import { apiClient } from '../api/client'
+const ROLE_OPTIONS: { role: Role; icon: string; label: string; desc: string }[] = [
+  { role: 'INVESTOR', icon: '💼', label: 'Investor', desc: 'Provide liquidity, earn returns' },
+  { role: 'BORROWER', icon: '🏢', label: 'Borrower', desc: 'Finance your invoices' },
+  { role: 'ADMIN', icon: '🛡️', label: 'Admin', desc: 'Manage platform approvals' },
+]
+
+const ROLE_REDIRECT: Record<Role, string> = {
+  INVESTOR: '/investor',
+  BORROWER: '/borrower',
+  ADMIN: '/admin',
+}
 
 export function LoginPage() {
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    console.info('API client ready for login calls:', apiClient.defaults.baseURL)
+  const [tab, setTab] = useState<'login' | 'register'>('login')
+  const [selectedRole, setSelectedRole] = useState<Role>('INVESTOR')
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const { login, register } = useAuth()
+  const navigate = useNavigate()
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    try {
+      if (tab === 'login') {
+        await login(email, password, selectedRole)
+      } else {
+        if (!name.trim()) { setError('Name is required'); setLoading(false); return }
+        await register(name, email, password, selectedRole)
+      }
+      navigate(ROLE_REDIRECT[selectedRole])
+    } catch {
+      setError('Authentication failed. Please try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
-    <section className="hero-grid">
-      <div className="hero-copy">
-        <span className="eyebrow">Frontend scaffold</span>
-        <h2>Invoice financing, ready for the first auth flow.</h2>
-        <p>
-          The UI is intentionally light for now: a login entry point, a dashboard
-          placeholder, and routing that can grow alongside the backend.
-        </p>
+    <div className="auth-page">
+      {/* Hero Panel */}
+      <div className="auth-hero">
+        <div className="auth-hero-logo">
+          <div className="auth-hero-logo-icon">
+            <BlockchainIcon size={28} />
+          </div>
+          <div>
+            <h1>StellarGive</h1>
+            <p>Invoice Finance Platform</p>
+          </div>
+        </div>
 
-        <div className="hero-stats">
-          <div>
-            <strong>JWT</strong>
-            <span>Auth-ready client setup</span>
+        <div className="auth-hero-content animate-in">
+          <h2>
+            Unlock Working Capital with<br />
+            <span>Blockchain-Powered</span><br />
+            Invoice Financing
+          </h2>
+          <p>
+            A decentralized liquidity pool connecting investors and businesses through
+            Stellar smart contracts — transparent, fast, and permissionless.
+          </p>
+        </div>
+
+        <div className="auth-hero-stats animate-in">
+          <div className="auth-stat">
+            <strong>10,800</strong>
+            <span>Pool Liquidity (XLM)</span>
           </div>
-          <div>
-            <strong>Vite</strong>
-            <span>Fast iteration for product work</span>
+          <div className="auth-stat">
+            <strong>8%</strong>
+            <span>Avg. Interest Rate</span>
           </div>
-          <div>
-            <strong>Axios</strong>
-            <span>Shared API entry point</span>
+          <div className="auth-stat">
+            <strong>5</strong>
+            <span>Active Requests</span>
           </div>
         </div>
       </div>
 
-      <div className="auth-panel">
-        <span className="eyebrow">Login</span>
-        <h2>Welcome back</h2>
-        <p>Use this placeholder form while the auth integration is being wired.</p>
+      {/* Form Panel */}
+      <div className="auth-form-panel">
+        <h2>{tab === 'login' ? 'Welcome back' : 'Create account'}</h2>
+        <p>{tab === 'login' ? 'Sign in to access your dashboard' : 'Join the platform as an investor or borrower'}</p>
+
+        <div className="auth-tabs">
+          <button className={`auth-tab${tab === 'login' ? ' active' : ''}`} onClick={() => { setTab('login'); setError('') }}>
+            Sign In
+          </button>
+          <button className={`auth-tab${tab === 'register' ? ' active' : ''}`} onClick={() => { setTab('register'); setError('') }}>
+            Register
+          </button>
+        </div>
 
         <form className="auth-form" onSubmit={handleSubmit}>
-          <label>
-            Email
-            <input type="email" name="email" placeholder="you@example.com" />
-          </label>
-          <label>
-            Password
-            <input type="password" name="password" placeholder="Enter password" />
-          </label>
-          <button type="submit">Continue</button>
+          {/* Role Selector */}
+          <div>
+            <div className="form-label" style={{ marginBottom: '0.5rem' }}>Select Role</div>
+            <div className="role-selector">
+              {ROLE_OPTIONS.map(({ role, icon, label }) => (
+                <div
+                  key={role}
+                  className={`role-option${selectedRole === role ? ' selected' : ''}`}
+                  onClick={() => setSelectedRole(role)}
+                >
+                  <div className="role-icon">{icon}</div>
+                  <div className="role-name">{label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {tab === 'register' && (
+            <div className="form-field">
+              <label className="form-label">Full Name</label>
+              <input
+                className="form-input"
+                type="text"
+                placeholder="Jane Kimani"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                required
+              />
+            </div>
+          )}
+
+          <div className="form-field">
+            <label className="form-label">Email</label>
+            <input
+              className="form-input"
+              type="email"
+              placeholder="you@company.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="form-field">
+            <label className="form-label">Password</label>
+            <input
+              className="form-input"
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+            />
+          </div>
+
+          {error && (
+            <div style={{
+              background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.2)',
+              borderRadius: 'var(--radius-md)', padding: '0.75rem 1rem',
+              color: 'var(--accent-red)', fontSize: '0.85rem'
+            }}>
+              {error}
+            </div>
+          )}
+
+          <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={loading}>
+            {loading ? '⚡ Connecting…' : tab === 'login' ? '→ Sign In' : '→ Create Account'}
+          </button>
         </form>
 
-        <div className="api-hint">API base URL: {apiClient.defaults.baseURL}</div>
       </div>
-    </section>
+    </div>
   )
 }
