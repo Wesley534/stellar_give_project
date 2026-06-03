@@ -11,7 +11,7 @@ const swaggerSpec = swaggerJSDoc({
     info: {
       title: 'GIVE Invoice Finance API',
       version: '1.0.0',
-      description: 'Authentication and user APIs for the invoice financing MVP.',
+      description: 'API surface for the GIVE Stellar invoice financing liquidity pool MVP.',
     },
     servers: [
       {
@@ -21,6 +21,9 @@ const swaggerSpec = swaggerJSDoc({
     tags: [
       { name: 'Auth', description: 'Authentication endpoints' },
       { name: 'Users', description: 'Protected user endpoints' },
+      { name: 'Wallets', description: 'Freighter wallet connection endpoints' },
+      { name: 'Pool', description: 'Liquidity pool operations and investor positions' },
+      { name: 'Financing', description: 'Invoice financing lifecycle endpoints' },
       { name: 'Health', description: 'Health and readiness checks' },
     ],
     components: {

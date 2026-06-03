@@ -4,7 +4,10 @@ import express from 'express'
 import { env } from './config/env'
 import { swaggerDocs } from './config/swagger'
 import { authRouter } from './modules/auth/auth.routes'
+import { financingRouter } from './modules/financing/financing.routes'
+import { poolRouter } from './modules/pool/pool.routes'
 import { userRouter } from './modules/users/user.routes'
+import { walletRouter } from './modules/wallets/wallet.routes'
 import {
   errorHandler,
   notFoundHandler,
@@ -49,6 +52,9 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/auth', authRouter)
 app.use('/api/users', userRouter)
+app.use('/api/wallets', walletRouter)
+app.use('/api/pool', poolRouter)
+app.use('/api/financing', financingRouter)
 app.use('/api-docs', swaggerDocs.serve, swaggerDocs.setup)
 
 app.use(notFoundHandler)

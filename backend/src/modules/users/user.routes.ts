@@ -29,7 +29,7 @@ const router = Router()
  *                 id: "ckx123"
  *                 name: "Jane Doe"
  *                 email: "jane@example.com"
- *                 role: "CUSTOMER"
+ *                 role: "BORROWER"
  *                 createdAt: "2026-06-02T12:00:00.000Z"
  *                 updatedAt: "2026-06-02T12:00:00.000Z"
  *       401:
