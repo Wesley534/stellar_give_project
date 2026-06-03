@@ -38,7 +38,7 @@ export async function registerUser(input: RegisterInput): Promise<AuthPayload> {
       name: input.name,
       email: normalizedEmail,
       passwordHash,
-      role: input.role ?? Role.CUSTOMER,
+      role: input.role ?? Role.BORROWER,
     },
   })
 

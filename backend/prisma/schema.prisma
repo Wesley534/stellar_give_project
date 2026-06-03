@@ -9,16 +9,90 @@ datasource db {
 
 enum Role {
   ADMIN
-  OFFTAKER
-  CUSTOMER
+  INVESTOR
+  BORROWER
+}
+
+enum WalletNetwork {
+  TESTNET
+  MAINNET
+}
+
+enum FinancingStatus {
+  PENDING_ADMIN_REVIEW
+  APPROVED
+  REJECTED
+  BORROWED
+  REPAID
+  CLOSED
 }
 
 model User {
-  id           String   @id @default(cuid())
-  name         String
-  email        String   @unique
-  passwordHash String
-  role         Role     @default(CUSTOMER)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                String             @id @default(cuid())
+  name              String
+  email             String             @unique
+  passwordHash      String
+  role              Role               @default(BORROWER)
+  wallets           Wallet[]
+  poolDeposits      PoolDeposit[]
+  financingRequests FinancingRequest[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+}
+
+model Wallet {
+  id             String        @id @default(cuid())
+  userId         String
+  walletAddress  String
+  network        WalletNetwork @default(TESTNET)
+  isPrimary      Boolean       @default(true)
+  connectionDate DateTime      @default(now())
+  createdAt      DateTime      @default(now())
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, walletAddress])
+}
+
+model PoolDeposit {
+  id              String   @id @default(cuid())
+  investorId      String
+  walletAddress   String
+  amount          Float
+  sharesReceived  Float
+  transactionHash String?
+  investor        User     @relation(fields: [investorId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+}
+
+model FinancingRequest {
+  id                String          @id @default(cuid())
+  borrowerId        String
+  walletAddress     String
+  invoiceNumber     String
+  invoiceAmount     Float
+  borrowAmount      Float
+  repaymentAmount   Float
+  dueDate           DateTime
+  description       String?
+  status            FinancingStatus @default(PENDING_ADMIN_REVIEW)
+  contractRequestId String?
+  approvalNote      String?
+  approvedById      String?
+  approvedAt        DateTime?
+  borrowedAt        DateTime?
+  repaidAt          DateTime?
+  borrower          User            @relation(fields: [borrowerId], references: [id], onDelete: Cascade)
+  repayments        Repayment[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+}
+
+model Repayment {
+  id                 String           @id @default(cuid())
+  financingRequestId String
+  walletAddress      String
+  amount             Float
+  transactionHash    String?
+  financingRequest   FinancingRequest @relation(fields: [financingRequestId], references: [id], onDelete: Cascade)
+  createdAt          DateTime         @default(now())
 }
