@@ -27,7 +27,7 @@ const router = Router()
  *             name: "Jane Doe"
  *             email: "jane@example.com"
  *             password: "password123"
- *             role: "CUSTOMER"
+ *             role: "BORROWER"
  *     responses:
  *       201:
  *         description: User registered successfully
@@ -41,7 +41,7 @@ const router = Router()
  *                   id: "ckx123"
  *                   name: "Jane Doe"
  *                   email: "jane@example.com"
- *                   role: "CUSTOMER"
+ *                   role: "BORROWER"
  *                   createdAt: "2026-06-02T12:00:00.000Z"
  *                   updatedAt: "2026-06-02T12:00:00.000Z"
  *                 token: "jwt-token"
@@ -84,7 +84,7 @@ router.post('/register', validate(registerSchema), async (req, res, next) => {
  *                   id: "ckx123"
  *                   name: "Jane Doe"
  *                   email: "jane@example.com"
- *                   role: "CUSTOMER"
+ *                   role: "BORROWER"
  *                   createdAt: "2026-06-02T12:00:00.000Z"
  *                   updatedAt: "2026-06-02T12:00:00.000Z"
  *                 token: "jwt-token"
@@ -118,7 +118,7 @@ router.post('/login', validate(loginSchema), async (req, res, next) => {
  *                 id: "ckx123"
  *                 name: "Jane Doe"
  *                 email: "jane@example.com"
- *                 role: "CUSTOMER"
+ *                 role: "BORROWER"
  *                 createdAt: "2026-06-02T12:00:00.000Z"
  *                 updatedAt: "2026-06-02T12:00:00.000Z"
  *       401:
