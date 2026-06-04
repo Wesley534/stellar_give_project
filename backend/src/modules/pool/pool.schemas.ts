@@ -1,8 +1,15 @@
 import { z } from 'zod'
 
-export const depositSchema = z.object({
+export const xlmDepositSchema = z.object({
   body: z.object({
-    amount: z.number().positive(),
+    sourceAmount: z.number().positive(),
+    transactionHash: z.string().min(64).max(64),
+  }),
+})
+
+export const fiatSimulationDepositSchema = z.object({
+  body: z.object({
+    kesAmount: z.number().positive(),
   }),
 })
 

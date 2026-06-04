@@ -1,4 +1,4 @@
-import { FinancingStatus, Role } from '@prisma/client'
+import { FinancingStatus, InvoiceStatus, PoolTransactionType, Role } from '@prisma/client'
 
 import { prisma } from '../../config/prisma'
 import { AppError } from '../../middlewares/error.middleware'
@@ -9,87 +9,129 @@ import {
   getStellarMetadata,
 } from '../stellar/stellar.service'
 import { requirePrimaryWallet } from '../wallets/wallet.service'
+import { calculateFinancingTerms, roundMoney } from './financing.utils'
 
-type CreateFinancingInput = {
-  invoiceNumber: string
-  invoiceAmount: number
-  borrowAmount: number
-  repaymentAmount: number
-  dueDate: string
-  description?: string
-}
-
-type ReviewAction = 'APPROVE' | 'REJECT'
-
-function canAccessRequest(role: Role, userId: string, borrowerId: string, status: FinancingStatus) {
-  if (role === Role.ADMIN) {
+function canAccessRequest(
+  role: Role,
+  userId: string,
+  supplierId: string,
+  requesterWalletAddress?: string | null,
+  customerWalletAddress?: string | null,
+) {
+  if (role === Role.ADMIN || supplierId === userId) {
     return true
   }
 
-  if (role === Role.BORROWER) {
-    return userId === borrowerId
-  }
-
   if (role === Role.INVESTOR) {
-    return status !== FinancingStatus.PENDING_ADMIN_REVIEW
+    return true
   }
 
-  return false
+  return role === Role.CUSTOMER && Boolean(requesterWalletAddress && requesterWalletAddress === customerWalletAddress)
 }
 
-export async function createFinancingRequest(
-  userId: string,
-  role: Role,
-  input: CreateFinancingInput,
-) {
-  if (role !== Role.BORROWER) {
-    throw new AppError('Only borrowers can create financing requests', 403)
-  }
-
-  if (input.borrowAmount > input.invoiceAmount) {
-    throw new AppError('Borrow amount cannot exceed the invoice amount', 400)
-  }
-
-  if (input.repaymentAmount <= input.borrowAmount) {
-    throw new AppError('Repayment amount must be greater than the borrow amount', 400)
-  }
-
-  const dueDate = new Date(input.dueDate)
-
-  if (Number.isNaN(dueDate.getTime())) {
-    throw new AppError('Due date must be a valid ISO date', 400)
-  }
-
-  const wallet = await requirePrimaryWallet(userId)
-
-  const request = await prisma.financingRequest.create({
-    data: {
-      borrowerId: userId,
-      walletAddress: wallet.walletAddress,
-      invoiceNumber: input.invoiceNumber,
-      invoiceAmount: input.invoiceAmount,
-      borrowAmount: input.borrowAmount,
-      repaymentAmount: input.repaymentAmount,
-      dueDate,
-      description: input.description,
+async function findFinancingRequest(requestId: string) {
+  const request = await prisma.financingRequest.findUnique({
+    where: {
+      id: requestId,
+    },
+    include: {
+      invoice: true,
+      settlement: true,
+      platformFee: true,
+      supplier: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      },
+      approvedBy: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      },
     },
   })
 
-  const updated = await prisma.financingRequest.update({
-    where: { id: request.id },
-    data: {
-      contractRequestId: buildContractRequestId(request.id),
+  if (!request) {
+    throw new AppError('Financing request not found', 404)
+  }
+
+  return request
+}
+
+export async function createFinancingRequest(userId: string, role: Role, invoiceId: string) {
+  if (role !== Role.BORROWER) {
+    throw new AppError('Only suppliers can create financing requests', 403)
+  }
+
+  const invoice = await prisma.invoice.findUnique({
+    where: {
+      id: invoiceId,
     },
     include: {
-      repayments: true,
+      financingRequest: true,
     },
+  })
+
+  if (!invoice) {
+    throw new AppError('Invoice not found', 404)
+  }
+
+  if (invoice.supplierId !== userId) {
+    throw new AppError('Suppliers can only finance their own invoices', 403)
+  }
+
+  if (invoice.status !== InvoiceStatus.VERIFIED) {
+    throw new AppError('Only verified invoices can request financing', 400)
+  }
+
+  if (invoice.financingRequest) {
+    throw new AppError('This invoice already has a financing request', 409)
+  }
+
+  const terms = calculateFinancingTerms(invoice.invoiceAmount)
+
+  const request = await prisma.financingRequest.create({
+    data: {
+      invoiceId: invoice.id,
+      supplierId: userId,
+      ...terms,
+    },
+  })
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.invoice.update({
+      where: {
+        id: invoice.id,
+      },
+      data: {
+        status: InvoiceStatus.FINANCING_REQUESTED,
+      },
+    })
+
+    return tx.financingRequest.update({
+      where: {
+        id: request.id,
+      },
+      data: {
+        contractRequestId: buildContractRequestId(request.id),
+      },
+      include: {
+        invoice: true,
+        settlement: true,
+        platformFee: true,
+      },
+    })
   })
 
   return {
     request: updated,
     stellar: {
       ...getStellarMetadata(),
-      transactionHash: buildTransactionHash('create_financing_request', updated.id),
+      transactionHash: buildTransactionHash('request_financing', updated.id),
     },
   }
 }
@@ -99,27 +141,38 @@ export async function listFinancingRequests(
   role: Role,
   status?: FinancingStatus,
 ) {
+  const baseStatus =
+    role === Role.INVESTOR || role === Role.CUSTOMER
+      ? status ?? {
+          in: [
+            FinancingStatus.APPROVED,
+            FinancingStatus.ACTIVE,
+            FinancingStatus.SETTLED,
+            FinancingStatus.REJECTED,
+          ],
+        }
+      : status
+
   const where =
     role === Role.ADMIN
-      ? { status }
+      ? { status: baseStatus }
       : role === Role.BORROWER
-        ? { borrowerId: userId, status }
-        : {
-            status: status ?? {
-              in: [
-                FinancingStatus.APPROVED,
-                FinancingStatus.BORROWED,
-                FinancingStatus.REPAID,
-                FinancingStatus.CLOSED,
-                FinancingStatus.REJECTED,
-              ],
-            },
-          }
+        ? { supplierId: userId, status: baseStatus }
+        : role === Role.CUSTOMER
+          ? {
+              status: baseStatus,
+              invoice: {
+                customerWalletAddress: (await requirePrimaryWallet(userId)).walletAddress,
+              },
+            }
+          : { status: baseStatus }
 
   return prisma.financingRequest.findMany({
     where,
     include: {
-      repayments: true,
+      invoice: true,
+      settlement: true,
+      platformFee: true,
     },
     orderBy: {
       createdAt: 'desc',
@@ -132,73 +185,118 @@ export async function getFinancingRequestById(
   userId: string,
   role: Role,
 ) {
-  const request = await prisma.financingRequest.findUnique({
-    where: { id: requestId },
-    include: {
-      repayments: true,
-    },
-  })
+  const request = await findFinancingRequest(requestId)
+  const customerWallet =
+    role === Role.CUSTOMER ? (await requirePrimaryWallet(userId)).walletAddress : null
 
-  if (!request) {
-    throw new AppError('Financing request not found', 404)
-  }
-
-  if (!canAccessRequest(role, userId, request.borrowerId, request.status)) {
+  if (
+    !canAccessRequest(
+      role,
+      userId,
+      request.supplierId,
+      customerWallet,
+      request.invoice.customerWalletAddress,
+    )
+  ) {
     throw new AppError('Forbidden', 403)
   }
 
   return request
 }
 
-export async function reviewFinancingRequest(
+export async function approveFinancingRequest(
   requestId: string,
   adminId: string,
   role: Role,
-  action: ReviewAction,
   note?: string,
 ) {
   if (role !== Role.ADMIN) {
-    throw new AppError('Only administrators can review financing requests', 403)
+    throw new AppError('Only administrators can approve financing requests', 403)
   }
 
-  const request = await prisma.financingRequest.findUnique({
-    where: { id: requestId },
-    include: {
-      repayments: true,
-    },
-  })
+  const request = await findFinancingRequest(requestId)
 
-  if (!request) {
-    throw new AppError('Financing request not found', 404)
+  if (request.status !== FinancingStatus.PENDING_APPROVAL) {
+    throw new AppError('Only pending financing requests can be approved', 400)
   }
-
-  if (request.status !== FinancingStatus.PENDING_ADMIN_REVIEW) {
-    throw new AppError('Only pending financing requests can be reviewed', 400)
-  }
-
-  const status =
-    action === 'APPROVE'
-      ? FinancingStatus.APPROVED
-      : FinancingStatus.REJECTED
 
   const updated = await prisma.financingRequest.update({
-    where: { id: requestId },
+    where: {
+      id: requestId,
+    },
     data: {
-      status,
-      approvalNote: note,
+      status: FinancingStatus.APPROVED,
       approvedById: adminId,
       approvedAt: new Date(),
+      transactionHash: buildTransactionHash('approve_financing', requestId),
     },
     include: {
-      repayments: true,
+      invoice: true,
+      settlement: true,
+      platformFee: true,
     },
   })
 
   return {
-    request: updated,
+    request: {
+      ...updated,
+      approvalNote: note,
+    },
     stellar: {
       ...getStellarMetadata(),
-      transactionHash: buildTransactionHash('approve_request', updated.id),
+      transactionHash: updated.transactionHash,
+    },
+  }
+}
+
+export async function rejectFinancingRequest(
+  requestId: string,
+  role: Role,
+  note?: string,
+) {
+  if (role !== Role.ADMIN) {
+    throw new AppError('Only administrators can reject financing requests', 403)
+  }
+
+  const request = await findFinancingRequest(requestId)
+  if (request.status !== FinancingStatus.PENDING_APPROVAL) {
+    throw new AppError('Only pending financing requests can be rejected', 400)
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.invoice.update({
+      where: {
+        id: request.invoiceId,
+      },
+      data: {
+        status: InvoiceStatus.VERIFIED,
+      },
+    })
+
+    return tx.financingRequest.update({
+      where: {
+        id: requestId,
+      },
+      data: {
+        status: FinancingStatus.REJECTED,
+        transactionHash: buildTransactionHash('reject_financing', requestId),
+      },
+      include: {
+        invoice: true,
+        settlement: true,
+        platformFee: true,
+      },
+    })
+  })
+
+  return {
+    request: {
+      ...updated,
+      rejectionNote: note,
+    },
+    stellar: {
+      ...getStellarMetadata(),
+      transactionHash: updated.transactionHash,
     },
   }
 }
@@ -208,89 +306,63 @@ export async function borrowAgainstFinancing(
   userId: string,
   role: Role,
 ) {
-  const request = await getFinancingRequestById(requestId, userId, role)
+  const request = await findFinancingRequest(requestId)
 
-  if (role !== Role.BORROWER || request.borrowerId !== userId) {
-    throw new AppError('Only the borrower who created the request can borrow funds', 403)
+  if (role !== Role.BORROWER || request.supplierId !== userId) {
+    throw new AppError('Only the supplier who created the request can borrow funds', 403)
+  }
+
+  if (request.invoice.status !== InvoiceStatus.FINANCING_REQUESTED) {
+    throw new AppError('Invoice must be financing requested before borrowing', 400)
   }
 
   if (request.status !== FinancingStatus.APPROVED) {
-    throw new AppError('Only approved financing requests can be borrowed', 400)
+    throw new AppError('Only approved financing requests can be funded', 400)
   }
 
   const poolInfo = await getPoolInfo()
-
-  if (request.borrowAmount > poolInfo.availableLiquidity) {
+  if (request.grossBorrowAmount > poolInfo.availableLiquidity) {
     throw new AppError('Insufficient pool liquidity to fund this financing request', 400)
   }
 
-  const updated = await prisma.financingRequest.update({
-    where: { id: requestId },
-    data: {
-      status: FinancingStatus.BORROWED,
-      borrowedAt: new Date(),
-    },
-    include: {
-      repayments: true,
-    },
-  })
+  const supplierWallet = await requirePrimaryWallet(userId)
+  const transactionHash = buildTransactionHash('borrow', request.id)
 
-  return {
-    request: updated,
-    pool: await getPoolInfo(),
-    stellar: {
-      ...getStellarMetadata(),
-      transactionHash: buildTransactionHash('borrow', updated.id),
-    },
-  }
-}
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.poolTransaction.create({
+      data: {
+        type: PoolTransactionType.BORROW,
+        userId,
+        walletAddress: supplierWallet.walletAddress,
+        amount: request.grossBorrowAmount,
+        transactionHash,
+      },
+    })
 
-export async function repayFinancing(
-  requestId: string,
-  userId: string,
-  role: Role,
-  amount: number,
-) {
-  const [request, wallet] = await Promise.all([
-    getFinancingRequestById(requestId, userId, role),
-    requirePrimaryWallet(userId),
-  ])
+    await tx.invoice.update({
+      where: {
+        id: request.invoiceId,
+      },
+      data: {
+        status: InvoiceStatus.FUNDED,
+      },
+    })
 
-  if (role !== Role.BORROWER || request.borrowerId !== userId) {
-    throw new AppError('Only the borrower who created the request can repay it', 403)
-  }
-
-  if (request.status !== FinancingStatus.BORROWED) {
-    throw new AppError('Only borrowed financing requests can be repaid', 400)
-  }
-
-  if (amount !== request.repaymentAmount) {
-    throw new AppError(
-      `Repayment amount must exactly match ${request.repaymentAmount}`,
-      400,
-    )
-  }
-
-  const transactionHash = buildTransactionHash('repay', request.id)
-
-  await prisma.repayment.create({
-    data: {
-      financingRequestId: request.id,
-      walletAddress: wallet.walletAddress,
-      amount,
-      transactionHash,
-    },
-  })
-
-  const updated = await prisma.financingRequest.update({
-    where: { id: request.id },
-    data: {
-      status: FinancingStatus.REPAID,
-      repaidAt: new Date(),
-    },
-    include: {
-      repayments: true,
-    },
+    return tx.financingRequest.update({
+      where: {
+        id: request.id,
+      },
+      data: {
+        status: FinancingStatus.ACTIVE,
+        borrowedAt: new Date(),
+        transactionHash,
+      },
+      include: {
+        invoice: true,
+        settlement: true,
+        platformFee: true,
+      },
+    })
   })
 
   return {

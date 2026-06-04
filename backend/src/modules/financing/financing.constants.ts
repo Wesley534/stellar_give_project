@@ -1,0 +1,5 @@
+export const ADVANCE_RATE_BPS = 8000
+export const INTEREST_RATE_BPS = 1000
+export const PROCESSING_FEE_BPS = 300
+
+export const FIAT_SIMULATION_KES_PER_XLM = 20

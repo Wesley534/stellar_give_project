@@ -1,152 +1,197 @@
-import { FinancingStatus, Role } from '@prisma/client'
+import {
+  PoolDepositSourceType,
+  PoolTransactionType,
+  Role,
+  WalletNetwork,
+} from '@prisma/client'
 
 import { prisma } from '../../config/prisma'
 import { AppError } from '../../middlewares/error.middleware'
+import { FIAT_SIMULATION_KES_PER_XLM } from '../financing/financing.constants'
+import { roundMoney } from '../financing/financing.utils'
 import { buildTransactionHash, getStellarMetadata } from '../stellar/stellar.service'
 import { requirePrimaryWallet } from '../wallets/wallet.service'
 
-async function getLedgerSums() {
-  const [
-    depositTotals,
-    repaymentTotals,
-    activeBorrowedTotals,
-    totalBorrowedTotals,
-    totalLoanCount,
-  ] =
+function assertInvestor(role: Role) {
+  if (role !== Role.INVESTOR) {
+    throw new AppError('Only investors can access pool operations', 403)
+  }
+}
+
+async function getPoolLedger() {
+  const [depositTotals, withdrawalTotals, activeFundingTotals, settledInterestTotals, feeTotals] =
     await Promise.all([
       prisma.poolDeposit.aggregate({
         _sum: {
-          amount: true,
+          tokenAmount: true,
           sharesReceived: true,
         },
       }),
-      prisma.repayment.aggregate({
+      prisma.poolTransaction.aggregate({
+        where: {
+          type: PoolTransactionType.WITHDRAWAL,
+        },
         _sum: {
           amount: true,
+          sharesAmount: true,
         },
       }),
       prisma.financingRequest.aggregate({
         where: {
-          status: FinancingStatus.BORROWED,
+          status: 'ACTIVE',
         },
         _sum: {
-          borrowAmount: true,
+          grossBorrowAmount: true,
         },
       }),
-      prisma.financingRequest.aggregate({
-        where: {
-          status: {
-            in: [
-              FinancingStatus.BORROWED,
-              FinancingStatus.REPAID,
-              FinancingStatus.CLOSED,
-            ],
-          },
-        },
+      prisma.invoiceSettlement.aggregate({
         _sum: {
-          borrowAmount: true,
+          interestRecovered: true,
         },
       }),
-      prisma.financingRequest.count({
-        where: {
-          status: {
-            in: [
-              FinancingStatus.BORROWED,
-              FinancingStatus.REPAID,
-              FinancingStatus.CLOSED,
-            ],
-          },
+      prisma.platformFee.aggregate({
+        _sum: {
+          feeAmount: true,
         },
       }),
     ])
 
-  return {
-    totalDeposits: depositTotals._sum.amount ?? 0,
-    totalShares: depositTotals._sum.sharesReceived ?? 0,
-    totalRepayments: repaymentTotals._sum.amount ?? 0,
-    outstandingLoans: activeBorrowedTotals._sum.borrowAmount ?? 0,
-    totalBorrowed: totalBorrowedTotals._sum.borrowAmount ?? 0,
-    totalLoans: totalLoanCount,
-  }
-}
-
-export async function getPoolInfo() {
-  const ledger = await getLedgerSums()
-  const availableLiquidity = Math.max(
-    ledger.totalDeposits + ledger.totalRepayments - ledger.totalBorrowed,
-    0,
+  const totalDepositedLiquidity = depositTotals._sum.tokenAmount ?? 0
+  const totalDepositShares = depositTotals._sum.sharesReceived ?? 0
+  const totalWithdrawnLiquidity = withdrawalTotals._sum.amount ?? 0
+  const totalWithdrawnShares = withdrawalTotals._sum.sharesAmount ?? 0
+  const outstandingPrincipal = activeFundingTotals._sum.grossBorrowAmount ?? 0
+  const totalInterestEarned = settledInterestTotals._sum.interestRecovered ?? 0
+  const totalPlatformFees = feeTotals._sum.feeAmount ?? 0
+  const totalLiquidity = roundMoney(
+    totalDepositedLiquidity - totalWithdrawnLiquidity + totalInterestEarned,
   )
-  const totalLiquidity = availableLiquidity + ledger.outstandingLoans
-  const sharePrice = ledger.totalShares > 0 ? totalLiquidity / ledger.totalShares : 1
+  const availableLiquidity = roundMoney(totalLiquidity - outstandingPrincipal)
+  const totalShares = roundMoney(totalDepositShares - totalWithdrawnShares)
 
   return {
     totalLiquidity,
     availableLiquidity,
+    totalShares,
+    outstandingPrincipal: roundMoney(outstandingPrincipal),
+    totalInterestEarned: roundMoney(totalInterestEarned),
+    totalPlatformFees: roundMoney(totalPlatformFees),
+  }
+}
+
+export async function getPoolInfo() {
+  const ledger = await getPoolLedger()
+  const activeFinancingCount = await prisma.financingRequest.count({
+    where: {
+      status: 'ACTIVE',
+    },
+  })
+
+  return {
+    totalLiquidity: ledger.totalLiquidity,
+    availableLiquidity: ledger.availableLiquidity,
     totalShares: ledger.totalShares,
-    totalLoans: ledger.totalLoans,
-    outstandingLoans: ledger.outstandingLoans,
-    sharePrice,
+    activeFinancingCount,
+    outstandingPrincipal: ledger.outstandingPrincipal,
+    totalInterestEarned: ledger.totalInterestEarned,
+    totalPlatformFees: ledger.totalPlatformFees,
+    sharePrice:
+      ledger.totalShares > 0 ? roundMoney(ledger.totalLiquidity / ledger.totalShares) : 1,
+    fiatSimulationRateKesPerXlm: FIAT_SIMULATION_KES_PER_XLM,
     stellar: getStellarMetadata(),
   }
 }
 
 export async function getInvestorPosition(userId: string, role: Role) {
-  if (role !== Role.INVESTOR) {
-    throw new AppError('Only investors can access pool positions', 403)
-  }
+  assertInvestor(role)
 
-  const [poolInfo, ledger] = await Promise.all([
+  const [poolInfo, depositTotals, withdrawalTotals] = await Promise.all([
     getPoolInfo(),
     prisma.poolDeposit.aggregate({
       where: {
         investorId: userId,
       },
       _sum: {
-        amount: true,
+        tokenAmount: true,
         sharesReceived: true,
+      },
+    }),
+    prisma.poolTransaction.aggregate({
+      where: {
+        userId,
+        type: PoolTransactionType.WITHDRAWAL,
+      },
+      _sum: {
+        amount: true,
+        sharesAmount: true,
       },
     }),
   ])
 
-  const sharesOwned = ledger._sum.sharesReceived ?? 0
-  const netDeposits = ledger._sum.amount ?? 0
+  const sharesOwned = roundMoney(
+    (depositTotals._sum.sharesReceived ?? 0) - (withdrawalTotals._sum.sharesAmount ?? 0),
+  )
+  const depositedAmount = roundMoney(
+    (depositTotals._sum.tokenAmount ?? 0) - (withdrawalTotals._sum.amount ?? 0),
+  )
   const currentValue =
     poolInfo.totalShares > 0
-      ? (sharesOwned / poolInfo.totalShares) * poolInfo.totalLiquidity
+      ? roundMoney((sharesOwned / poolInfo.totalShares) * poolInfo.totalLiquidity)
       : 0
 
   return {
     sharesOwned,
     currentValue,
-    deposits: netDeposits,
-    earnedInterest: currentValue - netDeposits,
+    depositedAmount,
+    earnedInterest: roundMoney(currentValue - depositedAmount),
     poolSharePercentage:
-      poolInfo.totalShares > 0 ? (sharesOwned / poolInfo.totalShares) * 100 : 0,
+      poolInfo.totalShares > 0 ? roundMoney((sharesOwned / poolInfo.totalShares) * 100) : 0,
   }
 }
 
-export async function depositToPool(userId: string, role: Role, amount: number) {
-  if (role !== Role.INVESTOR) {
-    throw new AppError('Only investors can deposit liquidity into the pool', 403)
+function validateTestnetDeposit(transactionHash: string) {
+  if (!/^[a-fA-F0-9]{64}$/.test(transactionHash)) {
+    throw new AppError('Transaction hash must be a valid 64-character Stellar hash', 400)
   }
+}
 
-  const [wallet, poolInfo] = await Promise.all([
-    requirePrimaryWallet(userId),
-    getPoolInfo(),
-  ])
-
+async function createPoolDepositRecord(input: {
+  userId: string
+  walletAddress: string
+  sourceType: PoolDepositSourceType
+  sourceAmount: number
+  tokenAmount: number
+  transactionHash?: string
+}) {
+  const poolInfo = await getPoolInfo()
   const sharesReceived =
     poolInfo.totalShares <= 0 || poolInfo.totalLiquidity <= 0
-      ? amount
-      : (amount * poolInfo.totalShares) / poolInfo.totalLiquidity
+      ? input.tokenAmount
+      : roundMoney((input.tokenAmount * poolInfo.totalShares) / poolInfo.totalLiquidity)
 
   const deposit = await prisma.poolDeposit.create({
     data: {
-      investorId: userId,
-      walletAddress: wallet.walletAddress,
-      amount,
+      investorId: input.userId,
+      walletAddress: input.walletAddress,
+      sourceType: input.sourceType,
+      sourceAmount: input.sourceAmount,
+      tokenAmount: input.tokenAmount,
       sharesReceived,
-      transactionHash: buildTransactionHash('deposit', userId),
+      transactionHash: input.transactionHash,
+    },
+  })
+
+  await prisma.poolTransaction.create({
+    data: {
+      type:
+        input.sourceType === PoolDepositSourceType.XLM
+          ? PoolTransactionType.XLM_DEPOSIT
+          : PoolTransactionType.FIAT_SIMULATION,
+      userId: input.userId,
+      walletAddress: input.walletAddress,
+      amount: input.tokenAmount,
+      sharesAmount: sharesReceived,
+      transactionHash: input.transactionHash,
     },
   })
 
@@ -157,14 +202,61 @@ export async function depositToPool(userId: string, role: Role, amount: number) 
   }
 }
 
+export async function recordXlmDeposit(
+  userId: string,
+  role: Role,
+  sourceAmount: number,
+  transactionHash: string,
+) {
+  assertInvestor(role)
+  validateTestnetDeposit(transactionHash)
+
+  const wallet = await requirePrimaryWallet(userId)
+
+  if (wallet.network !== WalletNetwork.TESTNET) {
+    throw new AppError('Real XLM deposits must come from a Stellar Testnet wallet', 400)
+  }
+
+  return createPoolDepositRecord({
+    userId,
+    walletAddress: wallet.walletAddress,
+    sourceType: PoolDepositSourceType.XLM,
+    sourceAmount: roundMoney(sourceAmount),
+    tokenAmount: roundMoney(sourceAmount),
+    transactionHash,
+  })
+}
+
+export async function simulateFiatDeposit(
+  userId: string,
+  role: Role,
+  kesAmount: number,
+) {
+  assertInvestor(role)
+
+  const wallet = await requirePrimaryWallet(userId)
+  const tokenAmount = roundMoney(kesAmount / FIAT_SIMULATION_KES_PER_XLM)
+
+  if (tokenAmount <= 0) {
+    throw new AppError('Simulated token amount must be positive', 400)
+  }
+
+  return createPoolDepositRecord({
+    userId,
+    walletAddress: wallet.walletAddress,
+    sourceType: PoolDepositSourceType.FIAT_SIMULATION,
+    sourceAmount: roundMoney(kesAmount),
+    tokenAmount,
+    transactionHash: buildTransactionHash('simulate_fiat_deposit', userId),
+  })
+}
+
 export async function withdrawFromPool(
   userId: string,
   role: Role,
   shareAmount: number,
 ) {
-  if (role !== Role.INVESTOR) {
-    throw new AppError('Only investors can withdraw liquidity from the pool', 403)
-  }
+  assertInvestor(role)
 
   const [wallet, poolInfo, investorPosition] = await Promise.all([
     requirePrimaryWallet(userId),
@@ -180,29 +272,33 @@ export async function withdrawFromPool(
     throw new AppError('The pool does not have any active shares', 400)
   }
 
-  const withdrawAmount = (shareAmount / poolInfo.totalShares) * poolInfo.totalLiquidity
+  const withdrawAmount = roundMoney((shareAmount * poolInfo.totalLiquidity) / poolInfo.totalShares)
 
   if (withdrawAmount > poolInfo.availableLiquidity) {
     throw new AppError('Insufficient available liquidity for this withdrawal', 400)
   }
 
-  const withdrawal = await prisma.poolDeposit.create({
+  const transactionHash = buildTransactionHash('withdraw_liquidity', userId)
+  const withdrawal = await prisma.poolTransaction.create({
     data: {
-      investorId: userId,
+      type: PoolTransactionType.WITHDRAWAL,
+      userId,
       walletAddress: wallet.walletAddress,
-      amount: -withdrawAmount,
-      sharesReceived: -shareAmount,
-      transactionHash: buildTransactionHash('withdraw', userId),
+      amount: withdrawAmount,
+      sharesAmount: roundMoney(shareAmount),
+      transactionHash,
     },
   })
 
   return {
     withdrawal: {
       ...withdrawal,
-      amount: Math.abs(withdrawal.amount),
-      sharesRedeemed: shareAmount,
+      sharesRedeemed: roundMoney(shareAmount),
     },
     pool: await getPoolInfo(),
-    stellar: getStellarMetadata(),
+    stellar: {
+      ...getStellarMetadata(),
+      transactionHash,
+    },
   }
 }

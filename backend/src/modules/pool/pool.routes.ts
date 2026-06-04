@@ -6,11 +6,16 @@ import {
 } from '../../middlewares/auth.middleware'
 import { validate } from '../../middlewares/validate.middleware'
 import { successResponse } from '../../utils/api-response'
-import { depositSchema, withdrawSchema } from './pool.schemas'
 import {
-  depositToPool,
+  fiatSimulationDepositSchema,
+  withdrawSchema,
+  xlmDepositSchema,
+} from './pool.schemas'
+import {
   getInvestorPosition,
   getPoolInfo,
+  recordXlmDeposit,
+  simulateFiatDeposit,
   withdrawFromPool,
 } from './pool.service'
 
@@ -18,104 +23,101 @@ const router = Router()
 
 /**
  * @openapi
- * /api/pool/deposit:
+ * /api/pool/deposit/xlm:
  *   post:
  *     tags: [Pool]
- *     summary: Deposit liquidity into the shared pool
+ *     summary: Record a real Stellar Testnet XLM liquidity deposit
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           example:
- *             amount: 5000
+ *             sourceAmount: 500
+ *             transactionHash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
  *     responses:
  *       200:
- *         description: Deposit recorded successfully
- *         content:
- *           application/json:
- *             example:
- *               success: true
- *               message: Pool deposit recorded successfully
- *               data:
- *                 deposit:
- *                   id: "clx_dep"
- *                   investorId: "clx_user"
- *                   walletAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"
- *                   amount: 5000
- *                   sharesReceived: 5000
- *                   transactionHash: "deposit_clx_user_deadbeef"
- *                   createdAt: "2026-06-03T12:00:00.000Z"
- *                 pool:
- *                   totalLiquidity: 5000
- *                   availableLiquidity: 5000
- *                   totalShares: 5000
- *                   totalLoans: 0
- *                   outstandingLoans: 0
- *                   sharePrice: 1
- *                 stellar:
- *                   network: "testnet"
- *                   contractId: "invoice-finance-pool"
- *                   tokenAddress: "sep41-token-address"
+ *         description: XLM deposit recorded successfully
  *       401:
  *         description: Unauthorized
  *       403:
  *         description: Only investors can deposit
  */
-router.post('/deposit', authenticate, validate(depositSchema), async (req, res, next) => {
-  try {
-    const authReq = req as AuthenticatedRequest
-    const payload = await depositToPool(
-      authReq.user.id,
-      authReq.user.role,
-      req.body.amount,
-    )
+router.post(
+  '/deposit/xlm',
+  authenticate,
+  validate(xlmDepositSchema),
+  async (req, res, next) => {
+    try {
+      const authReq = req as AuthenticatedRequest
+      const payload = await recordXlmDeposit(
+        authReq.user.id,
+        authReq.user.role,
+        req.body.sourceAmount,
+        req.body.transactionHash,
+      )
 
-    res.json(successResponse('Pool deposit recorded successfully', payload))
-  } catch (error) {
-    next(error)
-  }
-})
+      res.json(successResponse('XLM pool deposit recorded successfully', payload))
+    } catch (error) {
+      next(error)
+    }
+  },
+)
+
+/**
+ * @openapi
+ * /api/pool/deposit/fiat-simulation:
+ *   post:
+ *     tags: [Pool]
+ *     summary: Simulate a fiat deposit and mint pool shares for MVP demo flows
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           example:
+ *             kesAmount: 100000
+ *     responses:
+ *       200:
+ *         description: Fiat simulation deposit recorded successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Only investors can deposit
+ */
+router.post(
+  '/deposit/fiat-simulation',
+  authenticate,
+  validate(fiatSimulationDepositSchema),
+  async (req, res, next) => {
+    try {
+      const authReq = req as AuthenticatedRequest
+      const payload = await simulateFiatDeposit(
+        authReq.user.id,
+        authReq.user.role,
+        req.body.kesAmount,
+      )
+
+      res.json(successResponse('Fiat simulation deposit recorded successfully', payload))
+    } catch (error) {
+      next(error)
+    }
+  },
+)
 
 /**
  * @openapi
  * /api/pool/withdraw:
  *   post:
  *     tags: [Pool]
- *     summary: Withdraw liquidity from the shared pool using pool shares
+ *     summary: Withdraw pool liquidity by redeeming investor shares
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           example:
- *             shareAmount: 2500
+ *             shareAmount: 250
  *     responses:
  *       200:
- *         description: Withdrawal recorded successfully
- *         content:
- *           application/json:
- *             example:
- *               success: true
- *               message: Pool withdrawal recorded successfully
- *               data:
- *                 withdrawal:
- *                   id: "clx_dep"
- *                   investorId: "clx_user"
- *                   walletAddress: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"
- *                   amount: 2700
- *                   sharesRedeemed: 2500
- *                   transactionHash: "withdraw_clx_user_deadbeef"
- *                   createdAt: "2026-06-03T12:00:00.000Z"
- *                 pool:
- *                   totalLiquidity: 8100
- *                   availableLiquidity: 8100
- *                   totalShares: 7500
- *                   totalLoans: 1
- *                   outstandingLoans: 0
- *                   sharePrice: 1.08
- *                 stellar:
- *                   network: "testnet"
- *                   contractId: "invoice-finance-pool"
- *                   tokenAddress: "sep41-token-address"
+ *         description: Pool withdrawal recorded successfully
  *       401:
  *         description: Unauthorized
  *       403:
@@ -141,26 +143,10 @@ router.post('/withdraw', authenticate, validate(withdrawSchema), async (req, res
  * /api/pool/info:
  *   get:
  *     tags: [Pool]
- *     summary: Get aggregate liquidity pool information
+ *     summary: Get aggregate invoice-financing pool metrics
  *     responses:
  *       200:
  *         description: Pool information returned successfully
- *         content:
- *           application/json:
- *             example:
- *               success: true
- *               message: Pool information fetched successfully
- *               data:
- *                 totalLiquidity: 10800
- *                 availableLiquidity: 10800
- *                 totalShares: 10000
- *                 totalLoans: 1
- *                 outstandingLoans: 0
- *                 sharePrice: 1.08
- *                 stellar:
- *                   network: "testnet"
- *                   contractId: "invoice-finance-pool"
- *                   tokenAddress: "sep41-token-address"
  *       401:
  *         description: Unauthorized
  */
@@ -178,21 +164,10 @@ router.get('/info', authenticate, async (_req, res, next) => {
  * /api/pool/position:
  *   get:
  *     tags: [Pool]
- *     summary: Get the authenticated investor's current pool position
+ *     summary: Get the authenticated investor's pool position and yield
  *     responses:
  *       200:
- *         description: Investor position returned successfully
- *         content:
- *           application/json:
- *             example:
- *               success: true
- *               message: Pool position fetched successfully
- *               data:
- *                 sharesOwned: 5000
- *                 currentValue: 5400
- *                 deposits: 5000
- *                 earnedInterest: 400
- *                 poolSharePercentage: 50
+ *         description: Pool position returned successfully
  *       401:
  *         description: Unauthorized
  *       403:

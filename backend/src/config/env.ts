@@ -15,6 +15,10 @@ const envSchema = z.object({
   STELLAR_NETWORK: z.enum(['testnet', 'mainnet']).default('testnet'),
   STELLAR_CONTRACT_ID: z.string().min(1).default('invoice-finance-pool'),
   STELLAR_TOKEN_ADDRESS: z.string().min(1).default('sep41-token-address'),
+  STELLAR_TREASURY_WALLET: z
+    .string()
+    .min(1)
+    .default('TREASURY_TESTNET_WALLET'),
 })
 
 export const env = envSchema.parse(process.env)
