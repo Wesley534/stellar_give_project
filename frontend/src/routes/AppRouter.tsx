@@ -41,7 +41,6 @@ export function AppRouter() {
           <Route path="/financing" element={<FinancingRequestsPage />} />
           <Route path="/dashboard" element={<Navigate to="/" replace />} />
         </Route>
-
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </BrowserRouter>

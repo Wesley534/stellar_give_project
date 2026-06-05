@@ -1,49 +1,73 @@
-import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useAuth, type Role } from '../context/AuthContext'
-import { BlockchainIcon } from '../components/BlockchainIcon'
+import { useState, type SubmitEvent } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth, type Role } from "../context/AuthContext";
+import { BlockchainIcon } from "../components/BlockchainIcon";
 
-const ROLE_OPTIONS: { role: Role; icon: string; label: string; desc: string }[] = [
-  { role: 'INVESTOR', icon: '💼', label: 'Investor', desc: 'Provide liquidity, earn returns' },
-  { role: 'BORROWER', icon: '🏢', label: 'Borrower', desc: 'Finance your invoices' },
-  { role: 'ADMIN', icon: '🛡️', label: 'Admin', desc: 'Manage platform approvals' },
-]
+const ROLE_OPTIONS: {
+  role: Role;
+  icon: string;
+  label: string;
+  desc: string;
+}[] = [
+  {
+    role: "INVESTOR",
+    icon: "💼",
+    label: "Investor",
+    desc: "Provide liquidity, earn returns",
+  },
+  {
+    role: "BORROWER",
+    icon: "🏢",
+    label: "Borrower",
+    desc: "Finance your invoices",
+  },
+  {
+    role: "ADMIN",
+    icon: "🛡️",
+    label: "Admin",
+    desc: "Manage platform approvals",
+  },
+];
 
 const ROLE_REDIRECT: Record<Role, string> = {
-  INVESTOR: '/investor',
-  BORROWER: '/borrower',
-  ADMIN: '/admin',
-}
+  INVESTOR: "/investor",
+  BORROWER: "/borrower",
+  ADMIN: "/admin",
+};
 
 export function LoginPage() {
-  const [tab, setTab] = useState<'login' | 'register'>('login')
-  const [selectedRole, setSelectedRole] = useState<Role>('INVESTOR')
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const { login, register } = useAuth()
-  const navigate = useNavigate()
+  const [tab, setTab] = useState<"login" | "register">("login");
+  const [selectedRole, setSelectedRole] = useState<Role>("INVESTOR");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const { login, register } = useAuth();
+  const navigate = useNavigate();
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
+  const handleSubmit = async (e: SubmitEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
     try {
-      if (tab === 'login') {
-        await login(email, password, selectedRole)
+      if (tab === "login") {
+        await login(email, password, selectedRole);
       } else {
-        if (!name.trim()) { setError('Name is required'); setLoading(false); return }
-        await register(name, email, password, selectedRole)
+        if (!name.trim()) {
+          setError("Name is required");
+          setLoading(false);
+          return;
+        }
+        await register(name, email, password, selectedRole);
       }
-      navigate(ROLE_REDIRECT[selectedRole])
+      navigate(ROLE_REDIRECT[selectedRole]);
     } catch {
-      setError('Authentication failed. Please try again.')
+      setError("Authentication failed. Please try again.");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <div className="auth-page">
@@ -61,13 +85,16 @@ export function LoginPage() {
 
         <div className="auth-hero-content animate-in">
           <h2>
-            Unlock Working Capital with<br />
-            <span>Blockchain-Powered</span><br />
+            Unlock Working Capital with
+            <br />
+            <span>Blockchain-Powered</span>
+            <br />
             Invoice Financing
           </h2>
           <p>
-            A decentralized liquidity pool connecting investors and businesses through
-            Stellar smart contracts — transparent, fast, and permissionless.
+            A decentralized liquidity pool connecting investors and businesses
+            through Stellar smart contracts — transparent, fast, and
+            permissionless.
           </p>
         </div>
 
@@ -89,14 +116,30 @@ export function LoginPage() {
 
       {/* Form Panel */}
       <div className="auth-form-panel">
-        <h2>{tab === 'login' ? 'Welcome back' : 'Create account'}</h2>
-        <p>{tab === 'login' ? 'Sign in to access your dashboard' : 'Join the platform as an investor or borrower'}</p>
+        <h2>{tab === "login" ? "Welcome back" : "Create account"}</h2>
+        <p>
+          {tab === "login"
+            ? "Sign in to access your dashboard"
+            : "Join the platform as an investor or borrower"}
+        </p>
 
         <div className="auth-tabs">
-          <button className={`auth-tab${tab === 'login' ? ' active' : ''}`} onClick={() => { setTab('login'); setError('') }}>
+          <button
+            className={`auth-tab${tab === "login" ? " active" : ""}`}
+            onClick={() => {
+              setTab("login");
+              setError("");
+            }}
+          >
             Sign In
           </button>
-          <button className={`auth-tab${tab === 'register' ? ' active' : ''}`} onClick={() => { setTab('register'); setError('') }}>
+          <button
+            className={`auth-tab${tab === "register" ? " active" : ""}`}
+            onClick={() => {
+              setTab("register");
+              setError("");
+            }}
+          >
             Register
           </button>
         </div>
@@ -104,12 +147,14 @@ export function LoginPage() {
         <form className="auth-form" onSubmit={handleSubmit}>
           {/* Role Selector */}
           <div>
-            <div className="form-label" style={{ marginBottom: '0.5rem' }}>Select Role</div>
+            <div className="form-label" style={{ marginBottom: "0.5rem" }}>
+              Select Role
+            </div>
             <div className="role-selector">
               {ROLE_OPTIONS.map(({ role, icon, label }) => (
                 <div
                   key={role}
-                  className={`role-option${selectedRole === role ? ' selected' : ''}`}
+                  className={`role-option${selectedRole === role ? " selected" : ""}`}
                   onClick={() => setSelectedRole(role)}
                 >
                   <div className="role-icon">{icon}</div>
@@ -119,7 +164,7 @@ export function LoginPage() {
             </div>
           </div>
 
-          {tab === 'register' && (
+          {tab === "register" && (
             <div className="form-field">
               <label className="form-label">Full Name</label>
               <input
@@ -127,7 +172,7 @@ export function LoginPage() {
                 type="text"
                 placeholder="Jane Kimani"
                 value={name}
-                onChange={e => setName(e.target.value)}
+                onChange={(e) => setName(e.target.value)}
                 required
               />
             </div>
@@ -140,7 +185,7 @@ export function LoginPage() {
               type="email"
               placeholder="you@company.com"
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={(e) => setEmail(e.target.value)}
               required
             />
           </div>
@@ -152,27 +197,39 @@ export function LoginPage() {
               type="password"
               placeholder="••••••••"
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onChange={(e) => setPassword(e.target.value)}
               required
             />
           </div>
 
           {error && (
-            <div style={{
-              background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.2)',
-              borderRadius: 'var(--radius-md)', padding: '0.75rem 1rem',
-              color: 'var(--accent-red)', fontSize: '0.85rem'
-            }}>
+            <div
+              style={{
+                background: "rgba(248,113,113,0.1)",
+                border: "1px solid rgba(248,113,113,0.2)",
+                borderRadius: "var(--radius-md)",
+                padding: "0.75rem 1rem",
+                color: "var(--accent-red)",
+                fontSize: "0.85rem",
+              }}
+            >
               {error}
             </div>
           )}
 
-          <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={loading}>
-            {loading ? '⚡ Connecting…' : tab === 'login' ? '→ Sign In' : '→ Create Account'}
+          <button
+            className="btn btn-primary btn-full btn-lg"
+            type="submit"
+            disabled={loading}
+          >
+            {loading
+              ? "⚡ Connecting…"
+              : tab === "login"
+                ? "→ Sign In"
+                : "→ Create Account"}
           </button>
         </form>
-
       </div>
     </div>
-  )
+  );
 }

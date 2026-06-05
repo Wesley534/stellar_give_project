@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable react-hooks/set-state-in-effect */
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 
 export type Role = 'INVESTOR' | 'BORROWER' | 'ADMIN'

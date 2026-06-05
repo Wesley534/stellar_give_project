@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable react-hooks/set-state-in-effect */
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 
 interface WalletContextType {
@@ -48,6 +50,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     </WalletContext.Provider>
   )
 }
+
 
 export function useWallet() {
   const ctx = useContext(WalletContext)
