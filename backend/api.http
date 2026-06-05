@@ -1,0 +1,27 @@
+POST  http://localhost:5000/api/auth/login HTTP/1.1
+Accept: application/json
+Content-Type: application/json
+
+{
+            "email": "hori@mail.com",
+            "password": "12345678"
+}
+
+###
+POST http://localhost:5000/api/auth/register HTTP/1.1
+Accept: application/json
+Content-Type: application/json
+
+{
+  "name": "Hori",
+  "email": "hori@mail.com",
+  "password": "12345678",
+  "role": "BORROWER"
+}
+
+###
+GET http://localhost:5000/api/users/me HTTP/1.1
+Accept: application/json
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbXEwc2U0aWEwMDAwdnl4ZzJxbzdqOXVnIiwiZW1haWwiOiJob3JpQG1haWwuY29tIiwicm9sZSI6IkJPUlJPV0VSIiwiaWF0IjoxNzgwNjYwODEzLCJleHAiOjE3ODEyNjU2MTN9.Jhx4qySXXjSpgZFjxiTO401cDRH0xY58eFCQjxoDg8A
+

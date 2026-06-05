@@ -1,7 +1,12 @@
 import { useState, type SubmitEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth, type Role } from "../context/AuthContext";
+// import {  type Role } from "../context/AuthContext";
 import { BlockchainIcon } from "../components/BlockchainIcon";
+import useLogin from "../hooks/authHooks/useLogin";
+import useRegister from "../hooks/authHooks/useRegister";
+import { toast } from "react-hot-toast";
+
+export type Role = "INVESTOR" | "BORROWER" | "ADMIN";
 
 const ROLE_OPTIONS: {
   role: Role;
@@ -41,31 +46,54 @@ export function LoginPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const { login, register } = useAuth();
+
   const navigate = useNavigate();
+
+  const { mutate: login, isPending: isLoginPending } = useLogin();
+  const { mutate: register, isPending: isRegisterPending } = useRegister();
 
   const handleSubmit = async (e: SubmitEvent) => {
     e.preventDefault();
     setError("");
-    setLoading(true);
+    // setLoading(true);
     try {
       if (tab === "login") {
-        await login(email, password, selectedRole);
+        await login(
+          { email, password },
+          {
+            onSuccess: (data) => {
+              navigate(ROLE_REDIRECT[data?.data?.data?.user?.role as Role]);
+            },
+            onError: (err: unknown) => {
+              setError("Invalid email or password");
+              console.log("Login error:", err);
+              toast.error(
+                "Login failed. Please check your credentials and try again.",
+              );
+            },
+          },
+        );
       } else {
         if (!name.trim()) {
           setError("Name is required");
-          setLoading(false);
+          // setLoading(false);
           return;
         }
-        await register(name, email, password, selectedRole);
+        await register(
+          { name, email, password, role: selectedRole },
+          {
+            onSuccess: (data) => {
+              navigate(ROLE_REDIRECT[data?.data?.data?.user?.role as Role]);
+              // navigate(ROLE_REDIRECT[selectedRole]);
+            },
+          },
+        );
       }
-      navigate(ROLE_REDIRECT[selectedRole]);
     } catch {
       setError("Authentication failed. Please try again.");
     } finally {
-      setLoading(false);
+      // setLoading(false);
     }
   };
 
@@ -82,7 +110,6 @@ export function LoginPage() {
             <p>Invoice Finance Platform</p>
           </div>
         </div>
-
         <div className="auth-hero-content animate-in">
           <h2>
             Unlock Working Capital with
@@ -173,6 +200,7 @@ export function LoginPage() {
                 placeholder="Jane Kimani"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                disabled={isLoginPending || isRegisterPending}
                 required
               />
             </div>
@@ -186,6 +214,7 @@ export function LoginPage() {
               placeholder="you@company.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              disabled={isLoginPending || isRegisterPending}
               required
             />
           </div>
@@ -198,6 +227,7 @@ export function LoginPage() {
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              disabled={isLoginPending || isRegisterPending}
               required
             />
           </div>
@@ -220,9 +250,9 @@ export function LoginPage() {
           <button
             className="btn btn-primary btn-full btn-lg"
             type="submit"
-            disabled={loading}
+            disabled={isLoginPending || isRegisterPending}
           >
-            {loading
+            {isLoginPending
               ? "⚡ Connecting…"
               : tab === "login"
                 ? "→ Sign In"

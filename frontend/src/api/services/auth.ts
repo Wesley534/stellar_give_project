@@ -1,4 +1,4 @@
-import { apiClient } from "../client";
+import apiClient from "../client";
 
 export interface loginType {
   email: string;
@@ -15,10 +15,12 @@ export interface registerType {
 // Login function to call the backend API for user authentication
 export async function login({ email, password }: loginType) {
   try {
-    const res = await apiClient.post("/api/auth/login", {
+    console.log(`Attempting login with credentials: ${email} / ${password}`);
+    const res = await apiClient.post("auth/login", {
       email,
       password,
     });
+    console.log(`Login response from API: ${JSON.stringify(res)}`);
     return res;
   } catch (error) {
     console.error("Login failed:", error);
@@ -29,7 +31,7 @@ export async function login({ email, password }: loginType) {
 // Registration function to call the backend API for user registration
 export async function register(registerData: registerType) {
   try {
-    const res = await apiClient.post("/api/auth/register", {
+    const res = await apiClient.post("auth/register", {
       ...registerData,
     });
     return res;
@@ -45,20 +47,20 @@ export async function register(registerData: registerType) {
 
 // get auth user info from backend
 
-export async function getUser() {
-  try {
-    const res = await apiClient.get("/api/auth/me");
-    return res;
-  } catch (error) {
-    console.error("Fetching user info failed:", error);
-    throw new Error("Fetching user info failed", { cause: error });
-  }
-}
+// export async function getUser() {
+//   try {
+//     const res = await apiClient.get("auth/me");
+//     return res;
+//   } catch (error) {
+//     console.error("Fetching user info failed:", error);
+//     throw new Error("Fetching user info failed", { cause: error });
+//   }
+// }
 
 // get auth user info from backend (alternative endpoint for testing)
-export async function getUserData() {
+export async function getCurrentUserData() {
   try {
-    const res = await apiClient.get("/api/users/me");
+    const res = await apiClient.get("/users/me");
     return res;
   } catch (error) {
     console.error("Fetching user info failed:", error);

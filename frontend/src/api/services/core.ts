@@ -1,8 +1,8 @@
-import { apiClient } from "../client";
+import apiClient from "../client";
 
 export async function getHealth() {
   try {
-    const res = await apiClient.get("/api/health");
+    const res = await apiClient.get("/health");
     return res;
   } catch (error) {
     console.error("Health check failed:", error);
@@ -12,7 +12,7 @@ export async function getHealth() {
 
 export async function finance() {
   try {
-    const res = await apiClient.post("/api/financing");
+    const res = await apiClient.post("/financing");
     return res;
   } catch (error) {
     console.log("Error financing occur", error);
