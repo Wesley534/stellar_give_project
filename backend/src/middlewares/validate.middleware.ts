@@ -15,7 +15,6 @@ export function validate(schema: ZodTypeAny) {
 
     req.body = parsed.body
     req.params = parsed.params
-    req.query = parsed.query
 
     next()
   }
