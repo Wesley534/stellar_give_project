@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getStoredToken } from "../utils/storage";
 
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? "http://localhost:5000/api",
@@ -10,7 +11,7 @@ const apiClient = axios.create({
 
 // Add interceptor to inject token dynamically
 apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
+  const token = getStoredToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
     config.headers["Accept"] = "application/json";

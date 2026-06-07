@@ -4,6 +4,7 @@ import { BlockchainIcon } from "./BlockchainIcon";
 import useGetCurrentUser from "../hooks/authHooks/useGetCurrentUser";
 import toast from "react-hot-toast";
 import { useQueryClient } from "@tanstack/react-query";
+import { clearStoredToken } from "../utils/storage";
 
 interface SidebarProps {
   isOpen: boolean;
@@ -21,6 +22,10 @@ const BORROWER_NAV = [
   { icon: "📋", label: "Financing Requests", to: "/financing" },
 ];
 
+const CUSTOMER_NAV = [
+  { icon: "📋", label: "Customer Requests", to: "/financing" },
+];
+
 const ADMIN_NAV = [
   { icon: "🛡️", label: "Dashboard", to: "/admin" },
   { icon: "💧", label: "Liquidity Pool", to: "/pool" },
@@ -31,12 +36,13 @@ const ROLE_COLORS: Record<string, string> = {
   INVESTOR: "badge-investor",
   BORROWER: "badge-borrower",
   ADMIN: "badge-admin",
+  CUSTOMER: "badge-approved",
 };
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const { data } = useGetCurrentUser();
   const user = data?.data?.data;
-  const { walletAddress, isConnected } = useWallet();
+  const { walletAddress, isConnected, disconnect } = useWallet();
 
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -46,10 +52,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       ? INVESTOR_NAV
       : user?.role === "BORROWER"
         ? BORROWER_NAV
+        : user?.role === "CUSTOMER"
+          ? CUSTOMER_NAV
         : ADMIN_NAV;
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
+    clearStoredToken();
+    disconnect();
     queryClient.clear();
     toast.success("Logged out successfully");
     navigate("/");

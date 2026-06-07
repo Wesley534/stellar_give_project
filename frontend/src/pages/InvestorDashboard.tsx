@@ -14,7 +14,7 @@ export function InvestorDashboard() {
   const [toast, setToast] = useState("");
 
   const { data } = useGetCurrentUser();
-  const user = data?.data;
+  const user = data?.data?.data;
 
   const showToast = (msg: string) => {
     setToast(msg);

@@ -9,6 +9,10 @@ import { prisma } from '../../config/prisma'
 import { AppError } from '../../middlewares/error.middleware'
 import { FIAT_SIMULATION_KES_PER_XLM } from '../financing/financing.constants'
 import { roundMoney } from '../financing/financing.utils'
+import {
+  getContractInvestorPosition,
+  getContractPoolInfo,
+} from '../contract/contract.service'
 import { buildTransactionHash, getStellarMetadata } from '../stellar/stellar.service'
 import { requirePrimaryWallet } from '../wallets/wallet.service'
 
@@ -81,11 +85,17 @@ async function getPoolLedger() {
 
 export async function getPoolInfo() {
   const ledger = await getPoolLedger()
-  const activeFinancingCount = await prisma.financingRequest.count({
-    where: {
-      status: 'ACTIVE',
-    },
-  })
+  const [activeFinancingCount, onChain] = await Promise.all([
+    prisma.financingRequest.count({
+      where: {
+        status: 'ACTIVE',
+      },
+    }),
+    getContractPoolInfo().catch((error) => ({
+      unavailable: true,
+      message: error instanceof Error ? error.message : 'Unable to read contract pool info',
+    })),
+  ])
 
   return {
     totalLiquidity: ledger.totalLiquidity,
@@ -99,13 +109,14 @@ export async function getPoolInfo() {
       ledger.totalShares > 0 ? roundMoney(ledger.totalLiquidity / ledger.totalShares) : 1,
     fiatSimulationRateKesPerXlm: FIAT_SIMULATION_KES_PER_XLM,
     stellar: getStellarMetadata(),
+    onChain,
   }
 }
 
 export async function getInvestorPosition(userId: string, role: Role) {
   assertInvestor(role)
 
-  const [poolInfo, depositTotals, withdrawalTotals] = await Promise.all([
+  const [poolInfo, depositTotals, withdrawalTotals, onChain] = await Promise.all([
     getPoolInfo(),
     prisma.poolDeposit.aggregate({
       where: {
@@ -126,6 +137,11 @@ export async function getInvestorPosition(userId: string, role: Role) {
         sharesAmount: true,
       },
     }),
+    getContractInvestorPosition(userId, role).catch((error) => ({
+      unavailable: true,
+      message:
+        error instanceof Error ? error.message : 'Unable to read contract investor position',
+    })),
   ])
 
   const sharesOwned = roundMoney(
@@ -146,6 +162,7 @@ export async function getInvestorPosition(userId: string, role: Role) {
     earnedInterest: roundMoney(currentValue - depositedAmount),
     poolSharePercentage:
       poolInfo.totalShares > 0 ? roundMoney((sharesOwned / poolInfo.totalShares) * 100) : 0,
+    onChain,
   }
 }
 

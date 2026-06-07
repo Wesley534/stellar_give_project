@@ -1,15 +1,15 @@
 import { useState, type SubmitEvent } from "react";
 import { useNavigate } from "react-router-dom";
-// import {  type Role } from "../context/AuthContext";
 import { BlockchainIcon } from "../components/BlockchainIcon";
 import useLogin from "../hooks/authHooks/useLogin";
 import useRegister from "../hooks/authHooks/useRegister";
 import { toast } from "react-hot-toast";
 
-export type Role = "INVESTOR" | "BORROWER" | "ADMIN";
+export type Role = "INVESTOR" | "BORROWER" | "CUSTOMER" | "ADMIN";
+type RegisterRole = Exclude<Role, "ADMIN">;
 
 const ROLE_OPTIONS: {
-  role: Role;
+  role: RegisterRole;
   icon: string;
   label: string;
   desc: string;
@@ -27,22 +27,23 @@ const ROLE_OPTIONS: {
     desc: "Finance your invoices",
   },
   {
-    role: "ADMIN",
-    icon: "🛡️",
-    label: "Admin",
-    desc: "Manage platform approvals",
+    role: "CUSTOMER",
+    icon: "🧾",
+    label: "Customer",
+    desc: "Verify and settle invoices",
   },
 ];
 
 const ROLE_REDIRECT: Record<Role, string> = {
   INVESTOR: "/investor",
   BORROWER: "/borrower",
+  CUSTOMER: "/financing",
   ADMIN: "/admin",
 };
 
 export function LoginPage() {
   const [tab, setTab] = useState<"login" | "register">("login");
-  const [selectedRole, setSelectedRole] = useState<Role>("INVESTOR");
+  const [selectedRole, setSelectedRole] = useState<RegisterRole>("INVESTOR");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -147,7 +148,7 @@ export function LoginPage() {
         <p>
           {tab === "login"
             ? "Sign in to access your dashboard"
-            : "Join the platform as an investor or borrower"}
+            : "Join the platform as an investor, borrower, or customer"}
         </p>
 
         <div className="auth-tabs">
@@ -172,24 +173,34 @@ export function LoginPage() {
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit}>
-          {/* Role Selector */}
-          <div>
-            <div className="form-label" style={{ marginBottom: "0.5rem" }}>
-              Select Role
+          {tab === "register" && (
+            <div>
+              <div className="form-label" style={{ marginBottom: "0.5rem" }}>
+                Select Role
+              </div>
+              <div className="role-selector">
+                {ROLE_OPTIONS.map(({ role, icon, label }) => (
+                  <div
+                    key={role}
+                    className={`role-option${selectedRole === role ? " selected" : ""}`}
+                    onClick={() => setSelectedRole(role)}
+                  >
+                    <div className="role-icon">{icon}</div>
+                    <div className="role-name">{label}</div>
+                  </div>
+                ))}
+              </div>
+              <div
+                style={{
+                  marginTop: "0.75rem",
+                  fontSize: "0.78rem",
+                  color: "var(--text-muted)",
+                }}
+              >
+                Admin accounts are provisioned separately and cannot be self-registered.
+              </div>
             </div>
-            <div className="role-selector">
-              {ROLE_OPTIONS.map(({ role, icon, label }) => (
-                <div
-                  key={role}
-                  className={`role-option${selectedRole === role ? " selected" : ""}`}
-                  onClick={() => setSelectedRole(role)}
-                >
-                  <div className="role-icon">{icon}</div>
-                  <div className="role-name">{label}</div>
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
 
           {tab === "register" && (
             <div className="form-field">

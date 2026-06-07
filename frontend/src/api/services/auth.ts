@@ -1,80 +1,58 @@
 import apiClient from "../client";
 
-export interface loginType {
+export type Role = "INVESTOR" | "BORROWER" | "CUSTOMER" | "ADMIN";
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AuthEnvelope {
+  success: boolean;
+  message: string;
+  data: {
+    user: AuthUser;
+    token: string;
+  };
+}
+
+export interface CurrentUserEnvelope {
+  success: boolean;
+  message: string;
+  data: AuthUser;
+}
+
+export interface LoginInput {
   email: string;
   password: string;
 }
 
-export interface registerType {
+export interface RegisterInput {
   name: string;
   email: string;
   password: string;
-  role: string;
+  role: Exclude<Role, "ADMIN">;
 }
 
-// Login function to call the backend API for user authentication
-export async function login({ email, password }: loginType) {
-  try {
-    console.log(`Attempting login with credentials: ${email} / ${password}`);
-    const res = await apiClient.post("auth/login", {
-      email,
-      password,
-    });
-    console.log(`Login response from API: ${JSON.stringify(res)}`);
-    return res;
-  } catch (error) {
-    console.error("Login failed:", error);
-    throw new Error("Login failed", { cause: error });
-  }
+export type loginType = LoginInput;
+export type registerType = RegisterInput;
+
+export async function login(input: LoginInput) {
+  return apiClient.post<AuthEnvelope>("/auth/login", input);
 }
 
-// Registration function to call the backend API for user registration
-export async function register(registerData: registerType) {
-  try {
-    const res = await apiClient.post("auth/register", {
-      ...registerData,
-    });
-    return res;
-  } catch (error) {
-    console.error("Registration failed:", error);
-    throw new Error("Registration failed", { cause: error });
-  }
+export async function register(input: RegisterInput) {
+  return apiClient.post<AuthEnvelope>("/auth/register", input);
 }
 
-// GET /api/auth/me
-// GET /api/users/me
-// GET /api/users (admin only)
-
-// get auth user info from backend
-
-// export async function getUser() {
-//   try {
-//     const res = await apiClient.get("auth/me");
-//     return res;
-//   } catch (error) {
-//     console.error("Fetching user info failed:", error);
-//     throw new Error("Fetching user info failed", { cause: error });
-//   }
-// }
-
-// get auth user info from backend (alternative endpoint for testing)
 export async function getCurrentUserData() {
-  try {
-    const res = await apiClient.get("/users/me");
-    return res;
-  } catch (error) {
-    console.error("Fetching user info failed:", error);
-    throw new Error("Fetching user info failed", { cause: error });
-  }
+  return apiClient.get<CurrentUserEnvelope>("/auth/me");
 }
 
-// Get all users (admin only)
 export async function getAllUsers() {
-  try {
-    const res = await apiClient.get("/api/users");
-    return res;
-  } catch (error) {
-    console.error("Fetching all users failed:", error);
-    throw new Error("Fetching all users failed", { cause: error });
-  }
+  return apiClient.get("/users");
 }

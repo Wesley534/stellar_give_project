@@ -1,9 +1,10 @@
-import { FinancingStatus } from '@prisma/client'
+import { FinancingStatus, Role } from '@prisma/client'
 import { Router } from 'express'
 
 import {
   authenticate,
   AuthenticatedRequest,
+  authorize,
 } from '../../middlewares/auth.middleware'
 import { validate } from '../../middlewares/validate.middleware'
 import { successResponse } from '../../utils/api-response'
@@ -49,6 +50,7 @@ const router = Router()
 router.post(
   '/request',
   authenticate,
+  authorize(Role.BORROWER),
   validate(createFinancingSchema),
   async (req, res, next) => {
     try {
@@ -170,6 +172,7 @@ router.get('/:id', authenticate, validate(financingIdSchema), async (req, res, n
 router.post(
   '/:id/approve',
   authenticate,
+  authorize(Role.ADMIN),
   validate(reviewFinancingSchema),
   async (req, res, next) => {
     try {
@@ -219,6 +222,7 @@ router.post(
 router.post(
   '/:id/reject',
   authenticate,
+  authorize(Role.ADMIN),
   validate(reviewFinancingSchema),
   async (req, res, next) => {
     try {
@@ -226,6 +230,7 @@ router.post(
       const requestId = req.params.id as string
       const payload = await rejectFinancingRequest(
         requestId,
+        authReq.user.id,
         authReq.user.role,
         req.body.note,
       )
@@ -258,7 +263,7 @@ router.post(
  *       404:
  *         description: Financing request not found
  */
-router.post('/:id/borrow', authenticate, validate(financingIdSchema), async (req, res, next) => {
+router.post('/:id/borrow', authenticate, authorize(Role.BORROWER), validate(financingIdSchema), async (req, res, next) => {
   try {
     const authReq = req as AuthenticatedRequest
     const requestId = req.params.id as string

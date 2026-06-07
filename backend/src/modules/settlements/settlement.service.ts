@@ -47,14 +47,16 @@ export async function payInvoiceSettlement(
 
   const wallet = await requirePrimaryWallet(userId)
 
-  if (role !== Role.ADMIN) {
-    if (!request.invoice.customerWalletAddress) {
-      throw new AppError('Invoice does not have an assigned customer wallet', 400)
-    }
+  if (role !== Role.CUSTOMER) {
+    throw new AppError('Only the assigned customer can settle this invoice', 403)
+  }
 
-    if (wallet.walletAddress !== request.invoice.customerWalletAddress) {
-      throw new AppError('Only the assigned customer can settle this invoice', 403)
-    }
+  if (!request.invoice.customerWalletAddress) {
+    throw new AppError('Invoice does not have an assigned customer wallet', 400)
+  }
+
+  if (wallet.walletAddress !== request.invoice.customerWalletAddress) {
+    throw new AppError('Only the assigned customer can settle this invoice', 403)
   }
 
   const principalRecovered = request.grossBorrowAmount
@@ -77,7 +79,7 @@ export async function payInvoiceSettlement(
       data: {
         financingRequestId: request.id,
         invoiceId: request.invoiceId,
-        customerId: role === Role.ADMIN ? null : userId,
+        customerId: userId,
         customerWalletAddress: wallet.walletAddress,
         invoiceAmount: request.invoice.invoiceAmount,
         principalRecovered,
@@ -101,14 +103,14 @@ export async function payInvoiceSettlement(
       data: [
         {
           type: PoolTransactionType.SETTLEMENT,
-          userId: role === Role.ADMIN ? null : userId,
+          userId,
           walletAddress: wallet.walletAddress,
           amount: principalRecovered + interestRecovered,
           transactionHash,
         },
         {
           type: PoolTransactionType.PROCESSING_FEE,
-          userId: role === Role.ADMIN ? null : userId,
+          userId,
           walletAddress: env.STELLAR_TREASURY_WALLET,
           amount: processingFeeRecovered,
           transactionHash,

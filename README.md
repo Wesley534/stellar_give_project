@@ -69,6 +69,7 @@ GET http://localhost:5000/api/health
 Auth flow to test:
 
 1. `POST /api/auth/register` with `name`, `email`, `password`, and optional `role`
+   Allowed self-registration roles: `INVESTOR`, `BORROWER`, `CUSTOMER`
 2. `POST /api/auth/login` to receive a JWT token
 3. Click `Authorize` once in Swagger UI and paste `Bearer <token>` or only the raw token, depending on the prompt shown
 4. Call `GET /api/auth/me`, `GET /api/users/me`, and `GET /api/users`
@@ -78,6 +79,46 @@ Protected routes:
 - `GET /api/auth/me`
 - `GET /api/users/me`
 - `GET /api/users` (admin only)
+
+### Stellar contract API
+
+The backend now exposes contract-aware routes under `/api/contract`.
+
+Read endpoints:
+
+- `GET /api/contract/metadata`
+- `GET /api/contract/pool`
+- `GET /api/contract/position/me`
+- `GET /api/contract/invoices/:id`
+- `GET /api/contract/requests/:id`
+
+Interaction endpoints:
+
+- `POST /api/contract/actions/deposit`
+- `POST /api/contract/actions/withdraw`
+- `POST /api/contract/actions/invoices`
+- `POST /api/contract/actions/invoices/:id/verify`
+- `POST /api/contract/actions/invoices/:id/reject`
+- `POST /api/contract/actions/financing/request`
+- `POST /api/contract/actions/financing/:id/approve`
+- `POST /api/contract/actions/financing/:id/reject`
+- `POST /api/contract/actions/financing/:id/borrow`
+- `POST /api/contract/actions/settlements/:id/pay`
+- `POST /api/contract/actions/platform-fees/withdraw`
+
+These interaction endpoints build Stellar contract invocation XDR using the configured contract and the authenticated user's role. Admin-only contract actions are blocked in middleware before they reach the contract layer.
+
+### Backend Stellar env vars
+
+Add these values in `backend/.env` to enable live contract reads and invocation building:
+
+- `STELLAR_CONTRACT_ID`
+- `STELLAR_TOKEN_ADDRESS`
+- `STELLAR_RPC_URL`
+- `STELLAR_NETWORK_PASSPHRASE`
+- `STELLAR_READ_SOURCE_ACCOUNT`
+- `STELLAR_ADMIN_SOURCE_ACCOUNT` for admin-only contract invocations
+- `STELLAR_CLI_PATH` if `stellar` is not already on the system path
 
 ## Database notes
 

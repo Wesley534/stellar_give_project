@@ -139,15 +139,15 @@ export async function verifyInvoice(invoiceId: string, userId: string, role: Rol
     throw new AppError('Only pending invoices can be verified', 400)
   }
 
-  let customerWalletAddress = invoice.customerWalletAddress
+  if (role !== Role.CUSTOMER) {
+    throw new AppError('Only the assigned customer can verify this invoice', 403)
+  }
 
-  if (role !== Role.ADMIN) {
-    const wallet = await requirePrimaryWallet(userId)
-    customerWalletAddress = customerWalletAddress ?? wallet.walletAddress
+  const wallet = await requirePrimaryWallet(userId)
+  const customerWalletAddress = invoice.customerWalletAddress ?? wallet.walletAddress
 
-    if (customerWalletAddress !== wallet.walletAddress) {
-      throw new AppError('Only the assigned customer can verify this invoice', 403)
-    }
+  if (customerWalletAddress !== wallet.walletAddress) {
+    throw new AppError('Only the assigned customer can verify this invoice', 403)
   }
 
   const updated = await prisma.invoice.update({

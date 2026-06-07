@@ -15,6 +15,17 @@ const envSchema = z.object({
   STELLAR_NETWORK: z.enum(['testnet', 'mainnet']).default('testnet'),
   STELLAR_CONTRACT_ID: z.string().min(1).default('invoice-finance-pool'),
   STELLAR_TOKEN_ADDRESS: z.string().min(1).default('sep41-token-address'),
+  STELLAR_RPC_URL: z.string().url().default('https://soroban-testnet.stellar.org'),
+  STELLAR_NETWORK_PASSPHRASE: z
+    .string()
+    .min(1)
+    .default('Test SDF Network ; September 2015'),
+  STELLAR_READ_SOURCE_ACCOUNT: z
+    .string()
+    .min(1)
+    .default('GREADSOURCEACCOUNTPLACEHOLDERREADSOURCEACCOUNTPLACEHOLDER'),
+  STELLAR_ADMIN_SOURCE_ACCOUNT: z.string().min(1).optional(),
+  STELLAR_CLI_PATH: z.string().min(1).default('stellar'),
   STELLAR_TREASURY_WALLET: z
     .string()
     .min(1)

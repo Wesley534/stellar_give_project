@@ -16,7 +16,7 @@ export function TopBar({
   onHamburger,
   onWalletClick,
 }: TopBarProps) {
-  const { isConnected, walletAddress } = useWallet();
+  const { isConnected, walletAddress, network } = useWallet();
   // const { user } = useAuth()
   const { data } = useGetCurrentUser();
   const user = data?.data?.data; // Assuming the API response has a 'user' field
@@ -62,7 +62,7 @@ export function TopBar({
             border: "1px solid rgba(0,229,200,0.15)",
           }}
         >
-          ✦ Testnet
+          ✦ {network === "MAINNET" ? "Mainnet" : "Testnet"}
         </span>
 
         {/* Wallet button */}

@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { register, type registerType } from "../../api/services/auth";
 import toast from "react-hot-toast";
+import { setStoredToken } from "../../utils/storage";
 
 function useRegister() {
   return useMutation({
@@ -9,7 +10,7 @@ function useRegister() {
     },
     onSuccess: (data) => {
       toast.success(`${data.data.message}`);
-      localStorage.setItem("token", data?.data?.data?.token);
+      setStoredToken(data?.data?.data?.token);
     },
     onError(error) {
       toast.error("Registration failed");
