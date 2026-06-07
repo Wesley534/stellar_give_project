@@ -13,6 +13,8 @@ import {
   buildApproveFinancingInvocation,
   buildBorrowInvocation,
   buildDepositInvocation,
+  buildInvestorTrustlineInvocation,
+  buildTokenApproveInvocation,
   buildRejectFinancingInvocation,
   buildRejectInvoiceInvocation,
   buildRequestFinancingInvocation,
@@ -20,17 +22,23 @@ import {
   buildVerifyInvoiceInvocation,
   buildWithdrawInvocation,
   buildWithdrawPlatformFeesInvocation,
+  fundInvestorTokenBalance,
   getContractFinancingRequest,
   getContractInvoice,
   getContractInvestorPosition,
   getContractMetadata,
   getContractPoolInfo,
+  getTokenMetadata,
+  prepareInvestorDepositFlow,
+  submitInvestorSignedTransaction,
 } from './contract.service'
 import {
   contractIdParamSchema,
   createInvoiceBuildSchema,
   depositBuildSchema,
   requestFinancingBuildSchema,
+  submitSignedTransactionSchema,
+  tokenApproveBuildSchema,
   withdrawBuildSchema,
   withdrawPlatformFeesSchema,
 } from './contract.schemas'
@@ -49,6 +57,15 @@ router.get('/pool', authenticate, async (_req, res, next) => {
   try {
     const payload = await getContractPoolInfo()
     res.json(successResponse('Contract pool info fetched successfully', payload))
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.get('/token/metadata', authenticate, async (_req, res, next) => {
+  try {
+    const payload = await getTokenMetadata()
+    res.json(successResponse('Token metadata fetched successfully', payload))
   } catch (error) {
     next(error)
   }
@@ -88,6 +105,26 @@ router.get('/requests/:id', authenticate, validate(contractIdParamSchema), async
 })
 
 router.post(
+  '/actions/deposit/prepare',
+  authenticate,
+  authorize(Role.INVESTOR),
+  validate(depositBuildSchema),
+  async (req, res, next) => {
+    try {
+      const authReq = req as AuthenticatedRequest
+      const payload = await prepareInvestorDepositFlow(
+        authReq.user.id,
+        authReq.user.role,
+        req.body.amount,
+      )
+      res.json(successResponse('Investor deposit flow prepared successfully', payload))
+    } catch (error) {
+      next(error)
+    }
+  },
+)
+
+router.post(
   '/actions/deposit',
   authenticate,
   authorize(Role.INVESTOR),
@@ -101,6 +138,111 @@ router.post(
         req.body.amount,
       )
       res.json(successResponse('Contract deposit invocation built successfully', payload))
+    } catch (error) {
+      next(error)
+    }
+  },
+)
+
+router.post(
+  '/actions/token/approve',
+  authenticate,
+  authorize(Role.INVESTOR, Role.CUSTOMER),
+  validate(tokenApproveBuildSchema),
+  async (req, res, next) => {
+    try {
+      const authReq = req as AuthenticatedRequest
+      const payload = await buildTokenApproveInvocation(
+        authReq.user.id,
+        authReq.user.role,
+        req.body.amount,
+      )
+      res.json(successResponse('Token approve invocation built successfully', payload))
+    } catch (error) {
+      next(error)
+    }
+  },
+)
+
+router.post(
+  '/actions/token/trustline',
+  authenticate,
+  authorize(Role.INVESTOR),
+  async (req, res, next) => {
+    try {
+      const authReq = req as AuthenticatedRequest
+      const payload = await buildInvestorTrustlineInvocation(authReq.user.id, authReq.user.role)
+      res.json(successResponse('Investor trustline transaction built successfully', payload))
+    } catch (error) {
+      next(error)
+    }
+  },
+)
+
+router.post(
+  '/actions/token/fund',
+  authenticate,
+  authorize(Role.INVESTOR),
+  validate(tokenApproveBuildSchema),
+  async (req, res, next) => {
+    try {
+      const authReq = req as AuthenticatedRequest
+      console.log(
+        `[contract] POST /api/contract/actions/token/fund user=${authReq.user.id} amount=${req.body.amount}`,
+      )
+      const payload = await fundInvestorTokenBalance(
+        authReq.user.id,
+        authReq.user.role,
+        req.body.amount,
+      )
+      res.json(successResponse('Investor token funding submitted successfully', payload))
+    } catch (error) {
+      next(error)
+    }
+  },
+)
+
+router.post(
+  '/actions/submit',
+  authenticate,
+  validate(submitSignedTransactionSchema),
+  async (req, res, next) => {
+    try {
+      const authReq = req as AuthenticatedRequest
+      console.log(
+        `[contract] POST /api/contract/actions/submit user=${authReq.user.id} xdrLength=${
+          req.body.signedXdr?.length ?? 0
+        } preview=${req.body.signedXdr?.slice(0, 32) ?? 'N/A'}`,
+      )
+      // Additional diagnostics to help detect unsigned or malformed payloads
+      try {
+        const raw = req.body.signedXdr
+        console.log('[contract] POST /api/contract/actions/submit: signedXdr type=', typeof raw)
+        if (typeof raw === 'string') {
+          const isBase64 = /^[A-Za-z0-9+/=]+$/.test(raw)
+          console.log('[contract] POST /api/contract/actions/submit: base64-ish=', isBase64)
+          console.log('[contract] POST /api/contract/actions/submit: preview start=', raw.slice(0, 32))
+          console.log('[contract] POST /api/contract/actions/submit: preview end=', raw.slice(-16))
+        } else {
+          console.log('[contract] POST /api/contract/actions/submit: signedXdr is not a string')
+        }
+      } catch (logErr) {
+        console.log('[contract] error while logging signedXdr diagnostics', logErr)
+      }
+      // Normalize incoming payload: accept either a raw signed XDR string
+      // or an object containing `{ signedTxXdr: string }` (some clients may wrap it)
+      const rawBody = req.body.signedXdr
+      const normalizedSignedXdr =
+        typeof rawBody === 'string'
+          ? rawBody
+          : rawBody && typeof rawBody === 'object' && 'signedTxXdr' in rawBody
+          ? (rawBody as any).signedTxXdr
+          : undefined
+
+      console.log('[contract] POST /api/contract/actions/submit: normalizedSignedXdr type=', typeof normalizedSignedXdr)
+
+      const payload = await submitInvestorSignedTransaction(normalizedSignedXdr)
+      res.json(successResponse('Signed Stellar transaction submitted successfully', payload))
     } catch (error) {
       next(error)
     }

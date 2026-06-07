@@ -102,6 +102,21 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+
+    if (!token || !walletAddress) {
+      return;
+    }
+
+    void connectWalletApi({
+      walletAddress,
+      network,
+    }).catch(() => {
+      // Keep the local connection and let the requesting page surface API errors if sync fails.
+    });
+  }, [walletAddress, network]);
+
   const connect = async () => {
     setIsConnecting(true);
 
