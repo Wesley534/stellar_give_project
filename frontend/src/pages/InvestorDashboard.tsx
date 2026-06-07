@@ -1,57 +1,71 @@
 import { useState } from "react";
+import toast from "react-hot-toast";
 import { useWallet } from "../context/WalletContext";
 import { usePool } from "../hooks/usePool";
-import useGetCurrentUser from "../hooks/authHooks/useGetCurrentUser";
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString();
+}
 
 export function InvestorDashboard() {
-  
-  const { walletAddress, isConnected } = useWallet();
-  const { pool, deposits, deposit, withdraw, getInvestorPosition } = usePool();
+  const { isConnected } = useWallet();
+  const {
+    earnings,
+    deposits,
+    activity,
+    position,
+    deposit,
+    withdraw,
+    poolQuery,
+    positionQuery,
+    earningsQuery,
+    depositsQuery,
+    activityQuery,
+    contractMetadataQuery,
+    depositMutation,
+    withdrawMutation,
+  } = usePool();
 
   const [depositAmt, setDepositAmt] = useState("");
   const [withdrawAmt, setWithdrawAmt] = useState("");
-  const [loading, setLoading] = useState<"deposit" | "withdraw" | null>(null);
-  const [toast, setToast] = useState("");
-
-  const { data } = useGetCurrentUser();
-  const user = data?.data?.data;
-
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(""), 3000);
-  };
-
-  const myAddress = walletAddress ?? "GDXYZ7K3ABCDEF8UVWXYZ1234567890ABCDEF";
-  const position = getInvestorPosition(myAddress);
 
   const handleDeposit = async () => {
     const amt = Number(depositAmt);
     if (!amt || amt <= 0) return;
-    setLoading("deposit");
-    await deposit(amt, user?.name ?? "Investor", myAddress);
-    setLoading(null);
+    const response = await deposit(amt);
     setDepositAmt("");
-    showToast(`✅ Successfully deposited ${amt.toLocaleString()} XLM`);
+    toast.success(
+      `Liquidity deposited successfully. On-chain hash: ${response.depositSubmission.hash.slice(0, 12)}…`,
+    );
   };
 
   const handleWithdraw = async () => {
     const shares = Number(withdrawAmt);
     if (!shares || shares <= 0) return;
-    setLoading("withdraw");
-    const value = await withdraw(shares);
-    setLoading(null);
+    const response = await withdraw(shares);
     setWithdrawAmt("");
-    showToast(`✅ Withdrew ${value.toLocaleString()} XLM from pool`);
+    toast.success(
+      `Withdrawal invocation prepared via ${response.data.data.function}. Sign it with Freighter to complete the withdrawal.`,
+    );
   };
 
-  const utilization =
-    pool.totalLiquidity > 0
-      ? Math.round(
-          ((pool.totalLiquidity - pool.availableLiquidity) /
-            pool.totalLiquidity) *
-            100,
-        )
-      : 0;
+  if (
+    poolQuery.isLoading ||
+    positionQuery.isLoading ||
+    earningsQuery.isLoading ||
+    depositsQuery.isLoading ||
+    activityQuery.isLoading ||
+    contractMetadataQuery.isLoading
+  ) {
+    return (
+      <div className="panel">
+        <div className="empty-state">
+          <div className="empty-icon">⚡</div>
+          <p>Loading investor pool metrics and your on-chain position…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-in">
@@ -63,7 +77,7 @@ export function InvestorDashboard() {
           <div className="stat-card-value">
             {position.currentValue.toLocaleString()}
           </div>
-          <div className="stat-card-trend">XLM</div>
+          <div className="stat-card-trend">token value</div>
         </div>
         <div className="stat-card">
           <div className="stat-card-icon">📊</div>
@@ -85,16 +99,16 @@ export function InvestorDashboard() {
             className="stat-card-trend"
             style={{ color: "var(--accent-teal)" }}
           >
-            XLM profit
+            {earnings.yieldPercentage.toFixed(2)}% yield
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-card-icon">🏦</div>
           <div className="stat-card-label">Total Pool</div>
           <div className="stat-card-value">
-            {pool.totalLiquidity.toLocaleString()}
+            {earnings.estimatedWithdrawableAmount.toLocaleString()}
           </div>
-          <div className="stat-card-trend">XLM · {utilization}% utilized</div>
+          <div className="stat-card-trend">withdrawable now</div>
         </div>
       </div>
 
@@ -129,7 +143,7 @@ export function InvestorDashboard() {
             </div>
           )}
           <div className="form-field">
-            <label className="form-label">Amount (XLM)</label>
+            <label className="form-label">Amount (token units)</label>
             <input
               className="form-input"
               type="number"
@@ -148,14 +162,14 @@ export function InvestorDashboard() {
               margin: "0.5rem 0 1rem",
             }}
           >
-            <span>You receive shares proportional to deposit</span>
+            <span>The app will guide trustline setup, token funding, approval, and deposit signing in Freighter.</span>
           </div>
           <button
             className="btn btn-primary btn-full"
             onClick={handleDeposit}
-            disabled={loading === "deposit" || !depositAmt}
+            disabled={depositMutation.isPending || !depositAmt || !isConnected}
           >
-            {loading === "deposit" ? "⚡ Processing…" : "⬆ Deposit to Pool"}
+            {depositMutation.isPending ? "⚡ Depositing…" : "⬆ Deposit to Pool"}
           </button>
         </div>
 
@@ -210,69 +224,117 @@ export function InvestorDashboard() {
             className="btn btn-secondary btn-full"
             onClick={handleWithdraw}
             disabled={
-              loading === "withdraw" || !withdrawAmt || position.shares === 0
+              withdrawMutation.isPending || !withdrawAmt || position.shares === 0 || !isConnected
             }
           >
-            {loading === "withdraw" ? "⚡ Processing…" : "⬇ Withdraw from Pool"}
+            {withdrawMutation.isPending ? "⚡ Preparing…" : "⬇ Prepare Withdrawal"}
           </button>
         </div>
       </div>
 
-      {/* Investors Table */}
-      <div className="panel" style={{ marginTop: "1.5rem" }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1.2fr 0.8fr",
+          gap: "1.5rem",
+          marginTop: "1.5rem",
+        }}
+      >
+      <div className="panel">
         <div className="panel-header">
           <div>
-            <h3>👥 All Liquidity Providers</h3>
-            <p>{deposits.length} investors in the pool</p>
+            <h3>🧾 My Deposit History</h3>
+            <p>
+              {deposits.length > 0
+                ? `${deposits.length} recorded deposits into the liquidity pool`
+                : "Your deposit history will appear here after successful backend-recorded funding."}
+            </p>
           </div>
         </div>
+        {deposits.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">🧾</div>
+            <p>No deposit history has been recorded for this investor yet.</p>
+          </div>
+        ) : (
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Investor</th>
-                <th>Wallet</th>
-                <th>Deposited</th>
-                <th>Shares</th>
-                <th>Share %</th>
                 <th>Date</th>
+                <th>Funding Method</th>
+                <th>Source Amount</th>
+                <th>Pool Tokens</th>
+                <th>Shares</th>
+                <th>Tx</th>
               </tr>
             </thead>
             <tbody>
               {deposits.map((d) => (
                 <tr key={d.id}>
+                  <td>{formatDate(d.createdAt)}</td>
+                  <td><strong>{d.sourceType.replaceAll("_", " ")}</strong></td>
+                  <td>{d.sourceAmount.toLocaleString()}</td>
                   <td>
-                    <strong>{d.investorName}</strong>
-                  </td>
-                  <td>
-                    <span className="td-mono">
-                      {d.walletAddress.slice(0, 12)}…
-                    </span>
-                  </td>
-                  <td>
-                    <strong>{d.amount.toLocaleString()} XLM</strong>
+                    <strong>{d.tokenAmount.toLocaleString()}</strong>
                   </td>
                   <td>{d.sharesReceived.toLocaleString()}</td>
                   <td>
-                    <span
-                      style={{ color: "var(--accent-teal)", fontWeight: 600 }}
-                    >
-                      {d.sharePercent}%
+                    <span className="td-mono">
+                      {d.transactionHash ? `${d.transactionHash.slice(0, 10)}…` : "Pending"}
                     </span>
                   </td>
-                  <td>{d.depositDate}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        )}
       </div>
 
-      {toast && (
-        <div className="toast success">
-          <span>✅</span> {toast}
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <h3>📈 Recent Activity</h3>
+            <p>Deposits and withdrawals recorded for your wallet</p>
+          </div>
         </div>
-      )}
+        {activity.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">📈</div>
+            <p>No investor activity has been recorded yet.</p>
+          </div>
+        ) : (
+          activity.slice(0, 6).map((entry) => (
+            <div key={entry.id} className="investor-row">
+              <div
+                className="investor-avatar"
+                style={{
+                  background:
+                    entry.type === "DEPOSIT"
+                      ? "linear-gradient(135deg, rgba(16,185,129,0.18), rgba(0,229,200,0.18))"
+                      : "linear-gradient(135deg, rgba(245,158,11,0.18), rgba(167,139,250,0.18))",
+                }}
+              >
+                {entry.type === "DEPOSIT" ? "D" : "W"}
+              </div>
+              <div className="investor-info">
+                <strong>{entry.type === "DEPOSIT" ? "Liquidity Deposit" : "Liquidity Withdrawal"}</strong>
+                <span>{formatDate(entry.createdAt)}</span>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontWeight: 700 }}>
+                  {entry.tokenAmount.toLocaleString()} tokens
+                </div>
+                <span className="badge badge-approved">
+                  {entry.sharesAmount.toLocaleString()} shares
+                </span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+      </div>
     </div>
   );
 }

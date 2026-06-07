@@ -14,12 +14,25 @@ import {
   getContractPoolInfo,
 } from '../contract/contract.service'
 import { buildTransactionHash, getStellarMetadata } from '../stellar/stellar.service'
-import { requirePrimaryWallet } from '../wallets/wallet.service'
+import { getPrimaryWallet, requirePrimaryWallet } from '../wallets/wallet.service'
 
 function assertInvestor(role: Role) {
   if (role !== Role.INVESTOR) {
     throw new AppError('Only investors can access pool operations', 403)
   }
+}
+
+function parseOnChainI128(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  return null
 }
 
 async function getPoolLedger() {
@@ -97,16 +110,37 @@ export async function getPoolInfo() {
     })),
   ])
 
+  const onChainOutput =
+    onChain &&
+    typeof onChain === 'object' &&
+    'output' in onChain &&
+    onChain.output &&
+    typeof onChain.output === 'object'
+      ? onChain.output
+      : null
+
+  const totalLiquidity = parseOnChainI128(onChainOutput?.total_liquidity) ?? ledger.totalLiquidity
+  const availableLiquidity =
+    parseOnChainI128(onChainOutput?.available_liquidity) ?? ledger.availableLiquidity
+  const totalShares = parseOnChainI128(onChainOutput?.total_shares) ?? ledger.totalShares
+  const outstandingPrincipal =
+    parseOnChainI128(onChainOutput?.total_outstanding_principal) ??
+    ledger.outstandingPrincipal
+  const totalInterestEarned =
+    parseOnChainI128(onChainOutput?.total_interest_earned) ?? ledger.totalInterestEarned
+  const totalPlatformFees =
+    parseOnChainI128(onChainOutput?.total_platform_fees) ?? ledger.totalPlatformFees
+
   return {
-    totalLiquidity: ledger.totalLiquidity,
-    availableLiquidity: ledger.availableLiquidity,
-    totalShares: ledger.totalShares,
+    totalLiquidity,
+    availableLiquidity,
+    totalShares,
     activeFinancingCount,
-    outstandingPrincipal: ledger.outstandingPrincipal,
-    totalInterestEarned: ledger.totalInterestEarned,
-    totalPlatformFees: ledger.totalPlatformFees,
+    outstandingPrincipal,
+    totalInterestEarned,
+    totalPlatformFees,
     sharePrice:
-      ledger.totalShares > 0 ? roundMoney(ledger.totalLiquidity / ledger.totalShares) : 1,
+      totalShares > 0 ? roundMoney(totalLiquidity / totalShares) : 1,
     fiatSimulationRateKesPerXlm: FIAT_SIMULATION_KES_PER_XLM,
     stellar: getStellarMetadata(),
     onChain,
@@ -115,6 +149,8 @@ export async function getPoolInfo() {
 
 export async function getInvestorPosition(userId: string, role: Role) {
   assertInvestor(role)
+
+  const wallet = await getPrimaryWallet(userId)
 
   const [poolInfo, depositTotals, withdrawalTotals, onChain] = await Promise.all([
     getPoolInfo(),
@@ -132,17 +168,31 @@ export async function getInvestorPosition(userId: string, role: Role) {
         userId,
         type: PoolTransactionType.WITHDRAWAL,
       },
-      _sum: {
-        amount: true,
-        sharesAmount: true,
-      },
-    }),
-    getContractInvestorPosition(userId, role).catch((error) => ({
-      unavailable: true,
-      message:
-        error instanceof Error ? error.message : 'Unable to read contract investor position',
-    })),
+        _sum: {
+          amount: true,
+          sharesAmount: true,
+        },
+      }),
+    wallet
+      ? getContractInvestorPosition(userId, role).catch((error) => ({
+          unavailable: true,
+          message:
+            error instanceof Error ? error.message : 'Unable to read contract investor position',
+        }))
+      : Promise.resolve({
+          unavailable: true,
+          message: 'Connect a primary wallet to load the on-chain investor position',
+        }),
   ])
+
+  const onChainOutput =
+    onChain &&
+    typeof onChain === 'object' &&
+    'output' in onChain &&
+    onChain.output &&
+    typeof onChain.output === 'object'
+      ? onChain.output
+      : null
 
   const sharesOwned = roundMoney(
     (depositTotals._sum.sharesReceived ?? 0) - (withdrawalTotals._sum.sharesAmount ?? 0),
@@ -155,14 +205,137 @@ export async function getInvestorPosition(userId: string, role: Role) {
       ? roundMoney((sharesOwned / poolInfo.totalShares) * poolInfo.totalLiquidity)
       : 0
 
+  const onChainShares = parseOnChainI128(onChainOutput?.investor_shares)
+  const onChainCurrentValue = parseOnChainI128(onChainOutput?.estimated_withdrawable_amount)
+  const onChainPoolShareBps = parseOnChainI128(onChainOutput?.pool_share_bps)
+
   return {
-    sharesOwned,
-    currentValue,
+    sharesOwned: onChainShares ?? sharesOwned,
+    currentValue: onChainCurrentValue ?? currentValue,
     depositedAmount,
-    earnedInterest: roundMoney(currentValue - depositedAmount),
+    earnedInterest: roundMoney((onChainCurrentValue ?? currentValue) - depositedAmount),
     poolSharePercentage:
-      poolInfo.totalShares > 0 ? roundMoney((sharesOwned / poolInfo.totalShares) * 100) : 0,
+      onChainPoolShareBps !== null
+        ? roundMoney(onChainPoolShareBps / 100)
+        : poolInfo.totalShares > 0
+          ? roundMoney((sharesOwned / poolInfo.totalShares) * 100)
+          : 0,
     onChain,
+  }
+}
+
+export async function getInvestorEarnings(userId: string, role: Role) {
+  assertInvestor(role)
+
+  const [wallet, position] = await Promise.all([getPrimaryWallet(userId), getInvestorPosition(userId, role)])
+
+  const yieldPercentage =
+    position.depositedAmount > 0
+      ? roundMoney((position.earnedInterest / position.depositedAmount) * 100)
+      : 0
+
+  return {
+    walletAddress: wallet?.walletAddress ?? '',
+    depositedAmount: position.depositedAmount,
+    currentValue: position.currentValue,
+    earnedInterest: position.earnedInterest,
+    estimatedWithdrawableAmount: position.currentValue,
+    sharesOwned: position.sharesOwned,
+    poolSharePercentage: position.poolSharePercentage,
+    yieldPercentage,
+    onChain: position.onChain,
+  }
+}
+
+export async function listInvestorDeposits(userId: string, role: Role) {
+  assertInvestor(role)
+
+  const [wallet, deposits] = await Promise.all([
+    getPrimaryWallet(userId),
+    prisma.poolDeposit.findMany({
+      where: {
+        investorId: userId,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    }),
+  ])
+
+  const totalSourceAmount = roundMoney(
+    deposits.reduce((sum, deposit) => sum + deposit.sourceAmount, 0),
+  )
+  const totalTokenAmount = roundMoney(
+    deposits.reduce((sum, deposit) => sum + deposit.tokenAmount, 0),
+  )
+  const totalSharesReceived = roundMoney(
+    deposits.reduce((sum, deposit) => sum + deposit.sharesReceived, 0),
+  )
+
+  return {
+    walletAddress: wallet?.walletAddress ?? '',
+    totals: {
+      totalSourceAmount,
+      totalTokenAmount,
+      totalSharesReceived,
+      depositCount: deposits.length,
+    },
+    deposits,
+  }
+}
+
+export async function listInvestorActivity(userId: string, role: Role) {
+  assertInvestor(role)
+
+  const [wallet, deposits, withdrawals] = await Promise.all([
+    getPrimaryWallet(userId),
+    prisma.poolDeposit.findMany({
+      where: {
+        investorId: userId,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    }),
+    prisma.poolTransaction.findMany({
+      where: {
+        userId,
+        type: PoolTransactionType.WITHDRAWAL,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    }),
+  ])
+
+  const activity = [
+    ...deposits.map((deposit) => ({
+      id: deposit.id,
+      type: 'DEPOSIT' as const,
+      sourceType: deposit.sourceType,
+      walletAddress: deposit.walletAddress,
+      sourceAmount: deposit.sourceAmount,
+      tokenAmount: deposit.tokenAmount,
+      sharesAmount: deposit.sharesReceived,
+      transactionHash: deposit.transactionHash,
+      createdAt: deposit.createdAt,
+    })),
+    ...withdrawals.map((withdrawal) => ({
+      id: withdrawal.id,
+      type: 'WITHDRAWAL' as const,
+      sourceType: null,
+      walletAddress: withdrawal.walletAddress,
+      sourceAmount: withdrawal.amount,
+      tokenAmount: withdrawal.amount,
+      sharesAmount: withdrawal.sharesAmount ?? 0,
+      transactionHash: withdrawal.transactionHash,
+      createdAt: withdrawal.createdAt,
+    })),
+  ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+
+  return {
+    walletAddress: wallet?.walletAddress ?? '',
+    activity,
   }
 }
 
@@ -265,6 +438,32 @@ export async function simulateFiatDeposit(
     sourceAmount: roundMoney(kesAmount),
     tokenAmount,
     transactionHash: buildTransactionHash('simulate_fiat_deposit', userId),
+  })
+}
+
+export async function recordContractTokenDeposit(
+  userId: string,
+  role: Role,
+  tokenAmount: number,
+  transactionHash: string,
+) {
+  assertInvestor(role)
+  validateTestnetDeposit(transactionHash)
+
+  const wallet = await requirePrimaryWallet(userId)
+  const normalizedAmount = roundMoney(tokenAmount)
+
+  if (normalizedAmount <= 0) {
+    throw new AppError('Deposit amount must be positive', 400)
+  }
+
+  return createPoolDepositRecord({
+    userId,
+    walletAddress: wallet.walletAddress,
+    sourceType: PoolDepositSourceType.XLM,
+    sourceAmount: normalizedAmount,
+    tokenAmount: normalizedAmount,
+    transactionHash,
   })
 }
 

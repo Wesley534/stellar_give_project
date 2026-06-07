@@ -1,64 +1,88 @@
 import { useState } from "react";
-import { usePool } from "../hooks/usePool";
+import toast from "react-hot-toast";
+
 import { useWallet } from "../context/WalletContext";
-import useGetCurrentUser from "../hooks/authHooks/useGetCurrentUser";
+import { usePool } from "../hooks/usePool";
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString();
+}
 
 export function LiquidityPoolPage() {
-  const { walletAddress } = useWallet();
-  const { pool, deposits, deposit, withdraw, getInvestorPosition } = usePool();
+  const { isConnected } = useWallet();
+  const {
+    pool,
+    earnings,
+    deposits,
+    activity,
+    position,
+    deposit,
+    withdraw,
+    poolQuery,
+    positionQuery,
+    earningsQuery,
+    depositsQuery,
+    activityQuery,
+    contractMetadataQuery,
+    depositMutation,
+    withdrawMutation,
+  } = usePool();
   const [depositAmt, setDepositAmt] = useState("");
   const [withdrawAmt, setWithdrawAmt] = useState("");
-  const [loading, setLoading] = useState<"deposit" | "withdraw" | null>(null);
-  const [toast, setToast] = useState("");
-
-  const { data } = useGetCurrentUser();
-  const user = data?.data?.data;
-
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(""), 3000);
-  };
-
-  const myAddr = walletAddress ?? "GDXYZ7K3ABCDEF8UVWXYZ1234567890ABCDEF";
-  const position = getInvestorPosition(myAddr);
 
   const utilization =
     pool.totalLiquidity > 0
       ? Math.round(
-          ((pool.totalLiquidity - pool.availableLiquidity) /
-            pool.totalLiquidity) *
-            100,
+          ((pool.totalLiquidity - pool.availableLiquidity) / pool.totalLiquidity) * 100,
         )
       : 0;
 
-  // SVG donut ring values
   const radius = 70;
   const circumference = 2 * Math.PI * radius;
   const utilStroke = (utilization / 100) * circumference;
 
   const handleDeposit = async () => {
     const amt = Number(depositAmt);
-    if (!amt) return;
-    setLoading("deposit");
-    await deposit(amt, user?.name ?? "Investor", myAddr);
-    setLoading(null);
+    if (!amt || amt <= 0) return;
+
+    const response = await deposit(amt);
     setDepositAmt("");
-    showToast(`Deposited ${amt.toLocaleString()} XLM into pool`);
+    toast.success(
+      `Liquidity deposited successfully. On-chain hash: ${response.depositSubmission.hash.slice(0, 12)}…`,
+    );
   };
 
   const handleWithdraw = async () => {
     const shares = Number(withdrawAmt);
-    if (!shares) return;
-    setLoading("withdraw");
-    const val = await withdraw(shares);
-    setLoading(null);
+    if (!shares || shares <= 0) return;
+
+    const response = await withdraw(shares);
     setWithdrawAmt("");
-    showToast(`Withdrew ${val.toLocaleString()} XLM from pool`);
+    toast.success(
+      `Withdrawal invocation prepared via ${response.data.data.function}. Sign with Freighter to complete it.`,
+    );
   };
+
+  if (
+    poolQuery.isLoading ||
+    positionQuery.isLoading ||
+    earningsQuery.isLoading ||
+    depositsQuery.isLoading ||
+    activityQuery.isLoading ||
+    contractMetadataQuery.isLoading
+  ) {
+    return (
+      <div className="panel">
+        <div className="empty-state">
+          <div className="empty-icon">⚡</div>
+          <p>Loading live pool metrics and investor position…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-in">
-      {/* Top row: ring + stats */}
       <div
         style={{
           display: "grid",
@@ -68,7 +92,6 @@ export function LiquidityPoolPage() {
           alignItems: "start",
         }}
       >
-        {/* Pool Ring */}
         <div
           className="panel"
           style={{
@@ -79,9 +102,7 @@ export function LiquidityPoolPage() {
             gap: "1rem",
           }}
         >
-          <h3 style={{ fontSize: "0.9rem", fontWeight: 700 }}>
-            Pool Utilization
-          </h3>
+          <h3 style={{ fontSize: "0.9rem", fontWeight: 700 }}>Pool Utilization</h3>
           <div className="pool-ring">
             <svg width="160" height="160" viewBox="0 0 160 160">
               <circle
@@ -124,7 +145,7 @@ export function LiquidityPoolPage() {
           >
             <span style={{ color: "var(--text-muted)" }}>Available</span>
             <span style={{ color: "var(--accent-green)", fontWeight: 700 }}>
-              {pool.availableLiquidity.toLocaleString()} XLM
+              {pool.availableLiquidity.toLocaleString()} tokens
             </span>
           </div>
           <div
@@ -137,32 +158,24 @@ export function LiquidityPoolPage() {
           >
             <span style={{ color: "var(--text-muted)" }}>On Loan</span>
             <span style={{ color: "var(--accent-purple)", fontWeight: 700 }}>
-              {(pool.totalLiquidity - pool.availableLiquidity).toLocaleString()}{" "}
-              XLM
+              {pool.outstandingPrincipal.toLocaleString()} tokens
             </span>
           </div>
         </div>
 
-        {/* Stats Grid */}
         <div>
           <div className="stats-grid">
             <div className="stat-card">
               <div className="stat-card-icon">🏦</div>
               <div className="stat-card-label">Total Liquidity</div>
-              <div className="stat-card-value">
-                {pool.totalLiquidity.toLocaleString()}
-              </div>
-              <div className="stat-card-trend">XLM in pool</div>
+              <div className="stat-card-value">{pool.totalLiquidity.toLocaleString()}</div>
+              <div className="stat-card-trend">tokens in pool</div>
             </div>
             <div className="stat-card">
               <div className="stat-card-icon">🎟</div>
               <div className="stat-card-label">Total Shares</div>
-              <div className="stat-card-value">
-                {pool.totalShares.toLocaleString()}
-              </div>
-              <div className="stat-card-trend">
-                across {deposits.length} investors
-              </div>
+              <div className="stat-card-value">{pool.totalShares.toLocaleString()}</div>
+              <div className="stat-card-trend">share price {pool.sharePrice.toFixed(4)}</div>
             </div>
             <div className="stat-card">
               <div className="stat-card-icon">📤</div>
@@ -176,16 +189,12 @@ export function LiquidityPoolPage() {
               <div className="stat-card-value">
                 {pool.totalInterestEarned.toLocaleString()}
               </div>
-              <div
-                className="stat-card-trend"
-                style={{ color: "var(--accent-green)" }}
-              >
-                XLM distributed
+              <div className="stat-card-trend" style={{ color: "var(--accent-green)" }}>
+                your yield {earnings.yieldPercentage.toFixed(2)}%
               </div>
             </div>
           </div>
 
-          {/* My position */}
           {position.shares > 0 && (
             <div
               style={{
@@ -211,35 +220,23 @@ export function LiquidityPoolPage() {
               </div>
               <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap" }}>
                 {[
+                  { label: "Shares", value: `${position.shares.toLocaleString()}` },
+                  { label: "Share %", value: `${position.sharePercent.toFixed(1)}%` },
+                  { label: "Value", value: `${position.currentValue.toLocaleString()} tokens` },
                   {
-                    label: "Shares",
-                    value: `${position.shares.toLocaleString()}`,
-                  },
-                  {
-                    label: "Share %",
-                    value: `${position.sharePercent.toFixed(1)}%`,
-                  },
-                  {
-                    label: "Value",
-                    value: `${position.currentValue.toLocaleString()} XLM`,
+                    label: "Deposited",
+                    value: `${position.deposited.toLocaleString()} tokens`,
                   },
                   {
                     label: "Earned",
-                    value: `${position.earnedInterest.toLocaleString()} XLM`,
+                    value: `${position.earnedInterest.toLocaleString()} tokens`,
                   },
                 ].map(({ label, value }) => (
                   <div key={label}>
-                    <div
-                      style={{
-                        fontSize: "0.72rem",
-                        color: "var(--text-muted)",
-                      }}
-                    >
+                    <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
                       {label}
                     </div>
-                    <div
-                      style={{ fontWeight: 700, color: "var(--accent-teal)" }}
-                    >
+                    <div style={{ fontWeight: 700, color: "var(--accent-teal)" }}>
                       {value}
                     </div>
                   </div>
@@ -250,126 +247,162 @@ export function LiquidityPoolPage() {
         </div>
       </div>
 
-      {/* Deposit / Withdraw */}
-      {user?.role !== "ADMIN" && (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "1.5rem",
-            marginBottom: "1.5rem",
-          }}
-        >
-          <div className="panel">
-            <div className="panel-header">
-              <h3>⬆ Deposit</h3>
-            </div>
-            <div className="form-field">
-              <label className="form-label">Amount (XLM)</label>
-              <input
-                className="form-input"
-                type="number"
-                placeholder="1000"
-                value={depositAmt}
-                onChange={(e) => setDepositAmt(e.target.value)}
-              />
-            </div>
-            <button
-              className="btn btn-primary btn-full"
-              style={{ marginTop: "1rem" }}
-              onClick={handleDeposit}
-              disabled={loading === "deposit" || !depositAmt}
-            >
-              {loading === "deposit" ? "⚡ Processing…" : "⬆ Deposit to Pool"}
-            </button>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: "1.5rem",
+          marginBottom: "1.5rem",
+        }}
+      >
+        <div className="panel">
+          <div className="panel-header">
+            <h3>⬆ Deposit</h3>
           </div>
-          <div className="panel">
-            <div className="panel-header">
-              <h3>⬇ Withdraw</h3>
-            </div>
-            <div className="form-field">
-              <label className="form-label">Shares to Redeem</label>
-              <input
-                className="form-input"
-                type="number"
-                placeholder="500"
-                value={withdrawAmt}
-                onChange={(e) => setWithdrawAmt(e.target.value)}
-              />
-            </div>
-            <button
-              className="btn btn-secondary btn-full"
-              style={{ marginTop: "1rem" }}
-              onClick={handleWithdraw}
-              disabled={loading === "withdraw" || !withdrawAmt}
-            >
-              {loading === "withdraw"
-                ? "⚡ Processing…"
-                : "⬇ Withdraw from Pool"}
-            </button>
+          <div className="form-field">
+            <label className="form-label">Amount (token units)</label>
+            <input
+              className="form-input"
+              type="number"
+              placeholder="1000"
+              value={depositAmt}
+              onChange={(e) => setDepositAmt(e.target.value)}
+            />
           </div>
+          <div
+            style={{
+              marginTop: "0.6rem",
+              fontSize: "0.8rem",
+              color: "var(--text-muted)",
+            }}
+          >
+            The app will handle trustline setup, funding, approval, and deposit signing for you.
+          </div>
+          <button
+            className="btn btn-primary btn-full"
+            style={{ marginTop: "1rem" }}
+            onClick={handleDeposit}
+            disabled={depositMutation.isPending || !depositAmt || !isConnected}
+          >
+            {depositMutation.isPending ? "⚡ Depositing…" : "⬆ Deposit to Pool"}
+          </button>
         </div>
-      )}
 
-      {/* Investor Breakdown */}
+        <div className="panel">
+          <div className="panel-header">
+            <h3>⬇ Withdraw</h3>
+          </div>
+          <div className="form-field">
+            <label className="form-label">Shares to Redeem</label>
+            <input
+              className="form-input"
+              type="number"
+              placeholder="500"
+              value={withdrawAmt}
+              onChange={(e) => setWithdrawAmt(e.target.value)}
+            />
+          </div>
+          <button
+            className="btn btn-secondary btn-full"
+            style={{ marginTop: "1rem" }}
+            onClick={handleWithdraw}
+            disabled={withdrawMutation.isPending || !withdrawAmt || !isConnected}
+          >
+            {withdrawMutation.isPending ? "⚡ Preparing…" : "⬇ Prepare Withdrawal"}
+          </button>
+        </div>
+      </div>
+
       <div className="panel">
         <div className="panel-header">
           <div>
-            <h3>👥 Investor Breakdown</h3>
-            <p>{deposits.length} liquidity providers</p>
+            <h3>🧾 My Funding History</h3>
+            <p>
+              {deposits.length > 0
+                ? `${deposits.length} deposit records tracked for this investor`
+                : "Live aggregate pool data is connected. Your personal funding records will appear here once deposits are recorded."}
+            </p>
           </div>
         </div>
-        {deposits.map((d) => (
-          <div key={d.id} className="investor-row">
-            <div className="investor-avatar">
-              {d.investorName
-                .split(" ")
-                .map((n) => n[0])
-                .join("")
-                .slice(0, 2)}
-            </div>
-            <div className="investor-info">
-              <strong>{d.investorName}</strong>
-              <span className="font-mono">{d.walletAddress.slice(0, 14)}…</span>
-            </div>
-            <div>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.75rem",
-                }}
-              >
-                <div style={{ width: 80 }}>
-                  <div className="progress-bar">
-                    <div
-                      className="progress-fill"
-                      style={{ width: `${d.sharePercent}%` }}
-                    />
-                  </div>
-                </div>
-                <span className="investor-share">{d.sharePercent}%</span>
-              </div>
-              <div
-                style={{
-                  fontSize: "0.75rem",
-                  color: "var(--text-muted)",
-                  marginTop: "0.2rem",
-                  textAlign: "right",
-                }}
-              >
-                {d.amount.toLocaleString()} XLM
-              </div>
-            </div>
+        {deposits.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">🧾</div>
+            <p>No investor deposit history is available yet.</p>
           </div>
-        ))}
+        ) : (
+          deposits.map((d) => (
+            <div key={d.id} className="investor-row">
+              <div className="investor-avatar">💧</div>
+              <div className="investor-info">
+                <strong>{d.sourceType.replaceAll("_", " ")}</strong>
+                <span>{formatDate(d.createdAt)}</span>
+              </div>
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.75rem",
+                  }}
+                >
+                  <span style={{ fontWeight: 700 }}>{d.tokenAmount.toLocaleString()} tokens</span>
+                  <span className="badge badge-approved">
+                    {d.sharesReceived.toLocaleString()} shares
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
-      {toast && (
-        <div className="toast success">
-          <span>✅</span> {toast}
+      <div className="panel" style={{ marginTop: "1.5rem" }}>
+        <div className="panel-header">
+          <div>
+            <h3>📈 Activity Timeline</h3>
+            <p>Your latest liquidity actions across deposits and withdrawals</p>
+          </div>
         </div>
-      )}
+        {activity.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">📈</div>
+            <p>No pool activity has been recorded for this wallet yet.</p>
+          </div>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Tokens</th>
+                  <th>Shares</th>
+                  <th>Tx</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activity.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>{formatDate(entry.createdAt)}</td>
+                    <td>
+                      <span className="badge badge-approved">
+                        {entry.type}
+                      </span>
+                    </td>
+                    <td>{entry.tokenAmount.toLocaleString()}</td>
+                    <td>{entry.sharesAmount.toLocaleString()}</td>
+                    <td>
+                      <span className="td-mono">
+                        {entry.transactionHash ? `${entry.transactionHash.slice(0, 10)}…` : "Pending"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

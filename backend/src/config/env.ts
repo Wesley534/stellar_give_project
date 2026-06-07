@@ -25,7 +25,12 @@ const envSchema = z.object({
     .min(1)
     .default('GREADSOURCEACCOUNTPLACEHOLDERREADSOURCEACCOUNTPLACEHOLDER'),
   STELLAR_ADMIN_SOURCE_ACCOUNT: z.string().min(1).optional(),
+  STELLAR_ADMIN_SECRET_KEY: z.string().min(1).optional(),
+  STELLAR_READ_SECRET_KEY: z.string().min(1).optional(),
   STELLAR_CLI_PATH: z.string().min(1).default('stellar'),
+  STELLAR_TOKEN_TRUSTLINE_ASSET: z.string().min(1).optional(),
+  STELLAR_TOKEN_ISSUER_ACCOUNT: z.string().min(1).optional(),
+  STELLAR_TOKEN_ISSUER_SECRET_KEY: z.string().min(1).optional(),
   STELLAR_TREASURY_WALLET: z
     .string()
     .min(1)

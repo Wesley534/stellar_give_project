@@ -9,13 +9,18 @@ import {
 import { validate } from '../../middlewares/validate.middleware'
 import { successResponse } from '../../utils/api-response'
 import {
+  contractTokenDepositSchema,
   fiatSimulationDepositSchema,
   withdrawSchema,
   xlmDepositSchema,
 } from './pool.schemas'
 import {
   getInvestorPosition,
+  getInvestorEarnings,
   getPoolInfo,
+  listInvestorActivity,
+  listInvestorDeposits,
+  recordContractTokenDeposit,
   recordXlmDeposit,
   simulateFiatDeposit,
   withdrawFromPool,
@@ -86,6 +91,28 @@ router.post(
  *       403:
  *         description: Only investors can deposit
  */
+router.post(
+  '/deposit/contract-token',
+  authenticate,
+  authorize(Role.INVESTOR),
+  validate(contractTokenDepositSchema),
+  async (req, res, next) => {
+    try {
+      const authReq = req as AuthenticatedRequest
+      const payload = await recordContractTokenDeposit(
+        authReq.user.id,
+        authReq.user.role,
+        req.body.tokenAmount,
+        req.body.transactionHash,
+      )
+
+      res.json(successResponse('Contract token pool deposit recorded successfully', payload))
+    } catch (error) {
+      next(error)
+    }
+  },
+)
+
 router.post(
   '/deposit/fiat-simulation',
   authenticate,
@@ -182,6 +209,78 @@ router.get('/position', authenticate, authorize(Role.INVESTOR), async (req, res,
     const authReq = req as AuthenticatedRequest
     const payload = await getInvestorPosition(authReq.user.id, authReq.user.role)
     res.json(successResponse('Pool position fetched successfully', payload))
+  } catch (error) {
+    next(error)
+  }
+})
+
+/**
+ * @openapi
+ * /api/pool/earnings/me:
+ *   get:
+ *     tags: [Pool]
+ *     summary: Get the authenticated investor's earnings summary
+ *     responses:
+ *       200:
+ *         description: Investor earnings returned successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Only investors can access earnings
+ */
+router.get('/earnings/me', authenticate, authorize(Role.INVESTOR), async (req, res, next) => {
+  try {
+    const authReq = req as AuthenticatedRequest
+    const payload = await getInvestorEarnings(authReq.user.id, authReq.user.role)
+    res.json(successResponse('Investor earnings fetched successfully', payload))
+  } catch (error) {
+    next(error)
+  }
+})
+
+/**
+ * @openapi
+ * /api/pool/deposits/me:
+ *   get:
+ *     tags: [Pool]
+ *     summary: List the authenticated investor's deposit history
+ *     responses:
+ *       200:
+ *         description: Investor deposits returned successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Only investors can access deposit history
+ */
+router.get('/deposits/me', authenticate, authorize(Role.INVESTOR), async (req, res, next) => {
+  try {
+    const authReq = req as AuthenticatedRequest
+    const payload = await listInvestorDeposits(authReq.user.id, authReq.user.role)
+    res.json(successResponse('Investor deposits fetched successfully', payload))
+  } catch (error) {
+    next(error)
+  }
+})
+
+/**
+ * @openapi
+ * /api/pool/activity/me:
+ *   get:
+ *     tags: [Pool]
+ *     summary: List the authenticated investor's pool activity timeline
+ *     responses:
+ *       200:
+ *         description: Investor activity returned successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Only investors can access activity
+ */
+router.get('/activity/me', authenticate, authorize(Role.INVESTOR), async (req, res, next) => {
+  try {
+    const authReq = req as AuthenticatedRequest
+    const payload = await listInvestorActivity(authReq.user.id, authReq.user.role)
+    res.json(successResponse('Investor activity fetched successfully', payload))
   } catch (error) {
     next(error)
   }

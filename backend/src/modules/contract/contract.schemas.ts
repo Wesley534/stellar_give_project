@@ -22,6 +22,18 @@ export const withdrawBuildSchema = z.object({
   }),
 })
 
+export const tokenApproveBuildSchema = z.object({
+  body: z.object({
+    amount: z.number().positive(),
+  }),
+})
+
+export const submitSignedTransactionSchema = z.object({
+  body: z.object({
+    signedXdr: z.string().min(1),
+  }),
+})
+
 export const createInvoiceBuildSchema = z.object({
   body: z.object({
     customer: stellarAddress,
