@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { login, type loginType } from "../../api/services/auth";
 import { toast } from "react-hot-toast";
+import { setStoredToken } from "../../utils/storage";
 
 function useLogin() {
   return useMutation({
@@ -8,10 +9,8 @@ function useLogin() {
       return login({ email, password });
     },
     onSuccess: (data) => {
-      // console.log("Login successful, received token:", data?.data?.data?.token);
       toast.success(`${data.data.message}`);
-      localStorage.setItem("token", data?.data?.data?.token);
-      // Optionally, you can also store user info in localStorage or context
+      setStoredToken(data?.data?.data?.token);
     },
   });
 }

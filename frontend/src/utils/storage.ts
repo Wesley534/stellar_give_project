@@ -1,4 +1,4 @@
-const TOKEN_KEY = 'give-auth-token'
+const TOKEN_KEY = 'token'
 
 export function getStoredToken() {
   return window.localStorage.getItem(TOKEN_KEY)

@@ -1,8 +1,10 @@
 import { Router } from 'express'
+import { Role } from '@prisma/client'
 
 import {
   authenticate,
   AuthenticatedRequest,
+  authorize,
 } from '../../middlewares/auth.middleware'
 import { validate } from '../../middlewares/validate.middleware'
 import { successResponse } from '../../utils/api-response'
@@ -36,6 +38,7 @@ const router = Router()
 router.post(
   '/:id/pay-invoice',
   authenticate,
+  authorize(Role.CUSTOMER),
   validate(settlementIdSchema),
   async (req, res, next) => {
     try {

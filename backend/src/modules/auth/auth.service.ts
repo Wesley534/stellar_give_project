@@ -32,6 +32,10 @@ export async function registerUser(input: RegisterInput): Promise<AuthPayload> {
     throw new AppError('A user with that email already exists', 409)
   }
 
+  if (input.role === Role.ADMIN) {
+    throw new AppError('Admin accounts cannot be self-registered', 403)
+  }
+
   const passwordHash = await hashPassword(input.password)
   const user = await prisma.user.create({
     data: {

@@ -4,6 +4,7 @@ import express from 'express'
 import { env } from './config/env'
 import { swaggerDocs } from './config/swagger'
 import { authRouter } from './modules/auth/auth.routes'
+import { contractRouter } from './modules/contract/contract.routes'
 import { financingRouter } from './modules/financing/financing.routes'
 import { invoiceRouter } from './modules/invoices/invoice.routes'
 import { poolRouter } from './modules/pool/pool.routes'
@@ -55,6 +56,7 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/auth', authRouter)
 app.use('/api/users', userRouter)
 app.use('/api/wallets', walletRouter)
+app.use('/api/contract', contractRouter)
 app.use('/api/pool', poolRouter)
 app.use('/api/invoices', invoiceRouter)
 app.use('/api/financing', financingRouter)

@@ -1,9 +1,10 @@
-import { InvoiceStatus } from '@prisma/client'
+import { InvoiceStatus, Role } from '@prisma/client'
 import { Router } from 'express'
 
 import {
   authenticate,
   AuthenticatedRequest,
+  authorize,
 } from '../../middlewares/auth.middleware'
 import { validate } from '../../middlewares/validate.middleware'
 import { successResponse } from '../../utils/api-response'
@@ -68,7 +69,7 @@ const router = Router()
  *       401:
  *         description: Unauthorized
  */
-router.post('/', authenticate, validate(createInvoiceSchema), async (req, res, next) => {
+router.post('/', authenticate, authorize(Role.BORROWER), validate(createInvoiceSchema), async (req, res, next) => {
   try {
     const authReq = req as AuthenticatedRequest
     const payload = await createInvoice(authReq.user.id, authReq.user.role, req.body)
@@ -147,7 +148,7 @@ router.get('/:id', authenticate, validate(invoiceIdSchema), async (req, res, nex
  *       404:
  *         description: Invoice not found
  */
-router.post('/:id/verify', authenticate, validate(invoiceIdSchema), async (req, res, next) => {
+router.post('/:id/verify', authenticate, authorize(Role.CUSTOMER), validate(invoiceIdSchema), async (req, res, next) => {
   try {
     const authReq = req as AuthenticatedRequest
     const invoiceId = req.params.id as string
@@ -180,7 +181,7 @@ router.post('/:id/verify', authenticate, validate(invoiceIdSchema), async (req, 
  *       404:
  *         description: Invoice not found
  */
-router.post('/:id/reject', authenticate, validate(rejectInvoiceSchema), async (req, res, next) => {
+router.post('/:id/reject', authenticate, authorize(Role.ADMIN, Role.CUSTOMER), validate(rejectInvoiceSchema), async (req, res, next) => {
   try {
     const authReq = req as AuthenticatedRequest
     const invoiceId = req.params.id as string

@@ -1,8 +1,10 @@
 import { Router } from 'express'
+import { Role } from '@prisma/client'
 
 import {
   authenticate,
   AuthenticatedRequest,
+  authorize,
 } from '../../middlewares/auth.middleware'
 import { validate } from '../../middlewares/validate.middleware'
 import { successResponse } from '../../utils/api-response'
@@ -45,6 +47,7 @@ const router = Router()
 router.post(
   '/deposit/xlm',
   authenticate,
+  authorize(Role.INVESTOR),
   validate(xlmDepositSchema),
   async (req, res, next) => {
     try {
@@ -86,6 +89,7 @@ router.post(
 router.post(
   '/deposit/fiat-simulation',
   authenticate,
+  authorize(Role.INVESTOR),
   validate(fiatSimulationDepositSchema),
   async (req, res, next) => {
     try {
@@ -123,7 +127,7 @@ router.post(
  *       403:
  *         description: Only investors can withdraw
  */
-router.post('/withdraw', authenticate, validate(withdrawSchema), async (req, res, next) => {
+router.post('/withdraw', authenticate, authorize(Role.INVESTOR), validate(withdrawSchema), async (req, res, next) => {
   try {
     const authReq = req as AuthenticatedRequest
     const payload = await withdrawFromPool(
@@ -173,7 +177,7 @@ router.get('/info', authenticate, async (_req, res, next) => {
  *       403:
  *         description: Only investors can access pool positions
  */
-router.get('/position', authenticate, async (req, res, next) => {
+router.get('/position', authenticate, authorize(Role.INVESTOR), async (req, res, next) => {
   try {
     const authReq = req as AuthenticatedRequest
     const payload = await getInvestorPosition(authReq.user.id, authReq.user.role)

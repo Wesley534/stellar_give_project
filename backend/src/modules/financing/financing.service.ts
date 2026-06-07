@@ -8,7 +8,7 @@ import {
   buildTransactionHash,
   getStellarMetadata,
 } from '../stellar/stellar.service'
-import { requirePrimaryWallet } from '../wallets/wallet.service'
+import { requireAdminPrimaryWallet, requirePrimaryWallet } from '../wallets/wallet.service'
 import { calculateFinancingTerms, roundMoney } from './financing.utils'
 
 function canAccessRequest(
@@ -214,6 +214,8 @@ export async function approveFinancingRequest(
     throw new AppError('Only administrators can approve financing requests', 403)
   }
 
+  await requireAdminPrimaryWallet(adminId)
+
   const request = await findFinancingRequest(requestId)
 
   if (request.status !== FinancingStatus.PENDING_APPROVAL) {
@@ -251,12 +253,15 @@ export async function approveFinancingRequest(
 
 export async function rejectFinancingRequest(
   requestId: string,
+  adminId: string,
   role: Role,
   note?: string,
 ) {
   if (role !== Role.ADMIN) {
     throw new AppError('Only administrators can reject financing requests', 403)
   }
+
+  await requireAdminPrimaryWallet(adminId)
 
   const request = await findFinancingRequest(requestId)
   if (request.status !== FinancingStatus.PENDING_APPROVAL) {

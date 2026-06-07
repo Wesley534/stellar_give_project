@@ -60,7 +60,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "i128": "15000"
+                  "i128": "5000"
                 }
               ]
             }
@@ -85,7 +85,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
                 },
                 {
-                  "i128": "15000"
+                  "i128": "5000"
                 },
                 {
                   "u32": 1000
@@ -110,7 +110,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "i128": "15000"
+                  "i128": "5000"
                 }
               ]
             }
@@ -135,10 +135,10 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 },
                 {
-                  "string": "INV-REJECT-001"
+                  "string": "INV-LOW-LIQ"
                 },
                 {
-                  "i128": "12000"
+                  "i128": "10000"
                 },
                 {
                   "u64": "1750000000"
@@ -210,7 +210,7 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5",
-              "function_name": "reject_financing",
+              "function_name": "approve_financing",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
@@ -225,7 +225,6 @@
         }
       ]
     ],
-    [],
     []
   ],
   "ledger": {
@@ -475,7 +474,7 @@
                         ]
                       },
                       "val": {
-                        "i128": "15000"
+                        "i128": "5000"
                       }
                     },
                     {
@@ -520,7 +519,7 @@
                               "symbol": "expected_repayment_amount"
                             },
                             "val": {
-                              "i128": "10848"
+                              "i128": "9040"
                             }
                           },
                           {
@@ -536,7 +535,7 @@
                               "symbol": "interest_amount"
                             },
                             "val": {
-                              "i128": "960"
+                              "i128": "800"
                             }
                           },
                           {
@@ -552,7 +551,7 @@
                               "symbol": "invoice_amount"
                             },
                             "val": {
-                              "i128": "12000"
+                              "i128": "10000"
                             }
                           },
                           {
@@ -568,7 +567,7 @@
                               "symbol": "principal_amount"
                             },
                             "val": {
-                              "i128": "9600"
+                              "i128": "8000"
                             }
                           },
                           {
@@ -576,7 +575,7 @@
                               "symbol": "processing_fee_amount"
                             },
                             "val": {
-                              "i128": "288"
+                              "i128": "240"
                             }
                           },
                           {
@@ -602,7 +601,7 @@
                             "val": {
                               "vec": [
                                 {
-                                  "symbol": "Rejected"
+                                  "symbol": "Approved"
                                 }
                               ]
                             }
@@ -620,7 +619,7 @@
                               "symbol": "supplier_expected_surplus"
                             },
                             "val": {
-                              "i128": "1152"
+                              "i128": "960"
                             }
                           }
                         ]
@@ -638,7 +637,7 @@
                         ]
                       },
                       "val": {
-                        "i128": "15000"
+                        "i128": "5000"
                       }
                     },
                     {
@@ -691,7 +690,7 @@
                               "symbol": "invoice_amount"
                             },
                             "val": {
-                              "i128": "12000"
+                              "i128": "10000"
                             }
                           },
                           {
@@ -699,7 +698,7 @@
                               "symbol": "invoice_number"
                             },
                             "val": {
-                              "string": "INV-REJECT-001"
+                              "string": "INV-LOW-LIQ"
                             }
                           },
                           {
@@ -709,7 +708,7 @@
                             "val": {
                               "vec": [
                                 {
-                                  "symbol": "Verified"
+                                  "symbol": "Approved"
                                 }
                               ]
                             }
@@ -790,7 +789,7 @@
                         ]
                       },
                       "val": {
-                        "i128": "15000"
+                        "i128": "5000"
                       }
                     },
                     {
@@ -826,7 +825,7 @@
                         ]
                       },
                       "val": {
-                        "i128": "15000"
+                        "i128": "5000"
                       }
                     }
                   ]
@@ -976,7 +975,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "15000"
+                      "i128": "5000"
                     }
                   },
                   {

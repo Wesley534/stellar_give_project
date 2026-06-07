@@ -6,18 +6,23 @@ interface WalletModalProps {
 }
 
 export function WalletModal({ onClose }: WalletModalProps) {
-  const { isConnected, walletAddress, network, balance, connect, disconnect } = useWallet()
-  const [connecting, setConnecting] = useState(false)
+  const { isConnected, walletAddress, network, connect, disconnect, isConnecting } = useWallet()
+  const [copying, setCopying] = useState(false)
 
   const handleConnect = async () => {
-    setConnecting(true)
     await connect()
-    setConnecting(false)
   }
 
   const handleDisconnect = () => {
     disconnect()
     onClose()
+  }
+
+  const handleCopy = async () => {
+    if (!walletAddress) return
+    setCopying(true)
+    await navigator.clipboard.writeText(walletAddress)
+    setCopying(false)
   }
 
   return (
@@ -47,18 +52,18 @@ export function WalletModal({ onClose }: WalletModalProps) {
 
             <div className="wallet-modal-stats">
               <div className="wallet-stat">
-                <div className="ws-label">Balance</div>
-                <div className="ws-value">{balance.toLocaleString()} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>XLM</span></div>
+                <div className="ws-label">Address</div>
+                <div className="ws-value" style={{ fontSize: '0.82rem' }}>{walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}</div>
               </div>
               <div className="wallet-stat">
                 <div className="ws-label">Network</div>
-                <div className="ws-value" style={{ fontSize: '0.9rem' }}>Testnet</div>
+                <div className="ws-value" style={{ fontSize: '0.9rem' }}>{network}</div>
               </div>
             </div>
 
             <div style={{ display: 'flex', gap: '0.75rem' }}>
-              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { navigator.clipboard.writeText(walletAddress) }}>
-                📋 Copy Address
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={handleCopy}>
+                {copying ? '✓ Copied' : '📋 Copy Address'}
               </button>
               <button className="btn btn-danger" style={{ flex: 1 }} onClick={handleDisconnect}>
                 Disconnect
@@ -81,9 +86,9 @@ export function WalletModal({ onClose }: WalletModalProps) {
             <button
               className="btn btn-primary btn-full btn-lg"
               onClick={handleConnect}
-              disabled={connecting}
+              disabled={isConnecting}
             >
-              {connecting ? (
+              {isConnecting ? (
                 <>
                   <span style={{ display: 'inline-block', animation: 'spin-slow 1s linear infinite' }}>⚡</span>
                   Connecting…

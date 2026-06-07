@@ -3,7 +3,7 @@ import { StatusBadge } from './StatusBadge'
 
 interface Props {
   request: FinancingRequest
-  role: 'INVESTOR' | 'BORROWER' | 'ADMIN'
+  role: 'INVESTOR' | 'BORROWER' | 'ADMIN' | 'CUSTOMER'
   onApprove?: (id: string) => void
   onReject?: (id: string) => void
   onBorrow?: (id: string) => void

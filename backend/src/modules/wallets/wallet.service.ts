@@ -1,4 +1,5 @@
 import { prisma } from '../../config/prisma'
+import { stellarConfig } from '../../config/stellar'
 import { AppError } from '../../middlewares/error.middleware'
 import { buildTransactionHash, getStellarMetadata } from '../stellar/stellar.service'
 
@@ -62,6 +63,20 @@ export async function requirePrimaryWallet(userId: string) {
 
   if (!wallet) {
     throw new AppError('Connect a primary wallet before using this endpoint', 400)
+  }
+
+  return wallet
+}
+
+export async function requireAdminPrimaryWallet(userId: string) {
+  const wallet = await requirePrimaryWallet(userId)
+
+  if (!stellarConfig.adminSourceAccount) {
+    throw new AppError('Admin wallet is not configured on the backend', 503)
+  }
+
+  if (wallet.walletAddress !== stellarConfig.adminSourceAccount) {
+    throw new AppError('Connect the configured admin wallet to perform this action', 403)
   }
 
   return wallet
