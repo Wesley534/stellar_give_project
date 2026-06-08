@@ -7,6 +7,9 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   JWT_SECRET: z.string().min(1),
   JWT_EXPIRES_IN: z.string().min(1).default('7d'),
+  ADMIN_NAME: z.string().min(1),
+  ADMIN_EMAIL: z.email(),
+  ADMIN_PASSWORD: z.string().min(8),
   PORT: z.coerce.number().int().positive().default(5000),
   NODE_ENV: z
     .enum(['development', 'test', 'production'])
