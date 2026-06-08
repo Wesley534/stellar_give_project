@@ -134,3 +134,10 @@ export async function recordContractTokenDeposit(input: {
 }) {
   return apiClient.post("/pool/deposit/contract-token", input);
 }
+
+export async function recordPoolWithdrawal(input: {
+  shareAmount: number;
+  transactionHash: string;
+}) {
+  return apiClient.post("/pool/withdraw", input);
+}

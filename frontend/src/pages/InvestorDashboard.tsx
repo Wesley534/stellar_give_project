@@ -45,7 +45,7 @@ export function InvestorDashboard() {
     const response = await withdraw(shares);
     setWithdrawAmt("");
     toast.success(
-      `Withdrawal invocation prepared via ${response.data.data.function}. Sign it with Freighter to complete the withdrawal.`,
+      `Withdrawal submitted successfully. On-chain hash: ${response.withdrawSubmission.hash.slice(0, 12)}…`,
     );
   };
 
@@ -227,7 +227,7 @@ export function InvestorDashboard() {
               withdrawMutation.isPending || !withdrawAmt || position.shares === 0 || !isConnected
             }
           >
-            {withdrawMutation.isPending ? "⚡ Preparing…" : "⬇ Prepare Withdrawal"}
+            {withdrawMutation.isPending ? "⚡ Withdrawing…" : "⬇ Withdraw from Pool"}
           </button>
         </div>
       </div>

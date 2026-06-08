@@ -11,6 +11,7 @@ import { successResponse } from '../../utils/api-response'
 import {
   createFinancingSchema,
   financingIdSchema,
+  finalizeDisbursementSchema,
   listFinancingSchema,
   reviewFinancingSchema,
 } from './financing.schemas'
@@ -18,8 +19,10 @@ import {
   approveFinancingRequest,
   borrowAgainstFinancing,
   createFinancingRequest,
+  disburseApprovedFinancingRequest,
   getFinancingRequestById,
   listFinancingRequests,
+  prepareDisbursementTransaction,
   rejectFinancingRequest,
 } from './financing.service'
 
@@ -235,6 +238,49 @@ router.post(
         req.body.note,
       )
       res.json(successResponse('Financing request rejected successfully', payload))
+    } catch (error) {
+      next(error)
+    }
+  },
+)
+
+router.post(
+  '/:id/disburse/prepare',
+  authenticate,
+  authorize(Role.ADMIN),
+  validate(financingIdSchema),
+  async (req, res, next) => {
+    try {
+      const authReq = req as AuthenticatedRequest
+      const requestId = req.params.id as string
+      const payload = await prepareDisbursementTransaction(
+        requestId,
+        authReq.user.id,
+        authReq.user.role,
+      )
+      res.json(successResponse('Financing disbursement transaction prepared successfully', payload))
+    } catch (error) {
+      next(error)
+    }
+  },
+)
+
+router.post(
+  '/:id/disburse',
+  authenticate,
+  authorize(Role.ADMIN),
+  validate(finalizeDisbursementSchema),
+  async (req, res, next) => {
+    try {
+      const authReq = req as AuthenticatedRequest
+      const requestId = req.params.id as string
+      const payload = await disburseApprovedFinancingRequest(
+        requestId,
+        authReq.user.id,
+        authReq.user.role,
+        req.body.transactionHash,
+      )
+      res.json(successResponse('Financing funds disbursed successfully', payload))
     } catch (error) {
       next(error)
     }

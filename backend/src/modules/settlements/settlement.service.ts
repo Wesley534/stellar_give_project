@@ -3,8 +3,14 @@ import { FinancingStatus, InvoiceStatus, PoolTransactionType, Role } from '@pris
 import { env } from '../../config/env'
 import { prisma } from '../../config/prisma'
 import { AppError } from '../../middlewares/error.middleware'
+import {
+  buildCustomerTreasuryRepaymentInvocation,
+  submitTreasurySupplierPayout,
+} from '../contract/contract.service'
 import { getPoolInfo } from '../pool/pool.service'
-import { buildTransactionHash, getStellarMetadata } from '../stellar/stellar.service'
+import {
+  getStellarMetadata,
+} from '../stellar/stellar.service'
 import { requirePrimaryWallet } from '../wallets/wallet.service'
 
 async function findRequest(requestId: string) {
@@ -30,8 +36,23 @@ export async function payInvoiceSettlement(
   requestId: string,
   userId: string,
   role: Role,
+  transactionHash: string,
 ) {
+  console.log('[settlements] payInvoiceSettlement:start', {
+    requestId,
+    userId,
+    role,
+    transactionHash,
+  })
   const request = await findRequest(requestId)
+  console.log('[settlements] payInvoiceSettlement:request-loaded', {
+    requestId,
+    requestStatus: request.status,
+    invoiceStatus: request.invoice.status,
+    supplierId: request.supplierId,
+    customerId: request.invoice.customerId,
+    invoiceAmount: request.invoice.invoiceAmount,
+  })
 
   if (request.status !== FinancingStatus.ACTIVE) {
     throw new AppError('Only active financing requests can be settled', 400)
@@ -51,11 +72,7 @@ export async function payInvoiceSettlement(
     throw new AppError('Only the assigned customer can settle this invoice', 403)
   }
 
-  if (!request.invoice.customerWalletAddress) {
-    throw new AppError('Invoice does not have an assigned customer wallet', 400)
-  }
-
-  if (wallet.walletAddress !== request.invoice.customerWalletAddress) {
+  if (request.invoice.customerId !== userId) {
     throw new AppError('Only the assigned customer can settle this invoice', 403)
   }
 
@@ -68,11 +85,17 @@ export async function payInvoiceSettlement(
     interestRecovered -
     processingFeeRecovered
 
+  console.log('[settlements] payInvoiceSettlement:breakdown', {
+    requestId,
+    principalRecovered,
+    interestRecovered,
+    processingFeeRecovered,
+    supplierSurplus,
+  })
+
   if (supplierSurplus < 0) {
     throw new AppError('Invoice amount is insufficient to settle this financing request', 400)
   }
-
-  const transactionHash = buildTransactionHash('settle_invoice', request.id)
 
   const settlement = await prisma.$transaction(async (tx) => {
     const createdSettlement = await tx.invoiceSettlement.create({
@@ -124,7 +147,7 @@ export async function payInvoiceSettlement(
       },
       data: {
         status: InvoiceStatus.SETTLED,
-        customerWalletAddress: request.invoice.customerWalletAddress ?? wallet.walletAddress,
+        customerWalletAddress: wallet.walletAddress,
       },
     })
 
@@ -142,14 +165,69 @@ export async function payInvoiceSettlement(
     return createdSettlement
   })
 
+  console.log('[settlements] payInvoiceSettlement:db-settlement-recorded', {
+    requestId,
+    settlementId: settlement.id,
+  })
+
+  const supplierWallet = await requirePrimaryWallet(request.supplierId)
+  console.log('[settlements] payInvoiceSettlement:supplier-wallet', {
+    requestId,
+    supplierId: request.supplierId,
+    supplierWalletAddress: supplierWallet.walletAddress,
+  })
+  const supplierPayout =
+    supplierSurplus > 0
+      ? await submitTreasurySupplierPayout(supplierWallet.walletAddress, supplierSurplus)
+      : null
+
+  console.log('[settlements] payInvoiceSettlement:completed', {
+    requestId,
+    settlementId: settlement.id,
+    supplierPayout,
+  })
+
   return {
     settlement,
+    supplierPayout,
     pool: await getPoolInfo(),
     stellar: {
       ...getStellarMetadata(),
       transactionHash,
     },
   }
+}
+
+export async function prepareSettlementPayment(
+  requestId: string,
+  userId: string,
+  role: Role,
+) {
+  const request = await findRequest(requestId)
+
+  if (request.status !== FinancingStatus.ACTIVE) {
+    throw new AppError('Only active financing requests can be settled', 400)
+  }
+
+  if (request.invoice.status !== InvoiceStatus.FUNDED) {
+    throw new AppError('Only funded invoices can be settled', 400)
+  }
+
+  if (request.settlement) {
+    throw new AppError('This invoice has already been settled', 409)
+  }
+
+  if (role !== Role.CUSTOMER) {
+    throw new AppError('Only the assigned customer can settle this invoice', 403)
+  }
+
+  if (request.invoice.customerId !== userId) {
+    throw new AppError('Only the assigned customer can settle this invoice', 403)
+  }
+
+  await requirePrimaryWallet(userId)
+
+  return buildCustomerTreasuryRepaymentInvocation(userId, role, request.invoice.invoiceAmount)
 }
 
 export async function getSettlementByRequestId(

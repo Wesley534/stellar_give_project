@@ -53,6 +53,14 @@ export async function getCurrentUserData() {
   return apiClient.get<CurrentUserEnvelope>("/auth/me");
 }
 
-export async function getAllUsers() {
-  return apiClient.get("/users");
+export interface UserListEnvelope {
+  success: boolean;
+  message: string;
+  data: AuthUser[];
+}
+
+export async function getAllUsers(role?: Role) {
+  const params = role ? `?role=${encodeURIComponent(role)}` : "";
+  const response = await apiClient.get<UserListEnvelope>(`/users${params}`);
+  return response.data;
 }

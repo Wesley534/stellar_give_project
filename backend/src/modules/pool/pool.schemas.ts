@@ -23,5 +23,6 @@ export const contractTokenDepositSchema = z.object({
 export const withdrawSchema = z.object({
   body: z.object({
     shareAmount: z.number().positive(),
+    transactionHash: z.string().min(64).max(64),
   }),
 })

@@ -54,18 +54,27 @@ export async function listUserWallets(userId: string) {
 }
 
 export async function getPrimaryWallet(userId: string) {
-  return prisma.wallet.findFirst({
+  const wallet = await prisma.wallet.findFirst({
     where: {
       userId,
       isPrimary: true,
     },
   })
+
+  console.log('[wallets] getPrimaryWallet', {
+    userId,
+    found: Boolean(wallet),
+    walletAddress: wallet?.walletAddress ?? null,
+  })
+
+  return wallet
 }
 
 export async function requirePrimaryWallet(userId: string) {
   const wallet = await getPrimaryWallet(userId)
 
   if (!wallet) {
+    console.log('[wallets] requirePrimaryWallet missing primary wallet', { userId })
     throw new AppError('Connect a primary wallet before using this endpoint', 400)
   }
 

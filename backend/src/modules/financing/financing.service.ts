@@ -2,9 +2,9 @@ import { FinancingStatus, InvoiceStatus, PoolTransactionType, Role } from '@pris
 
 import { prisma } from '../../config/prisma'
 import { AppError } from '../../middlewares/error.middleware'
+import { buildTreasuryDisbursementPaymentInvocation } from '../contract/contract.service'
 import { getPoolInfo } from '../pool/pool.service'
 import {
-  buildContractRequestId,
   buildTransactionHash,
   getStellarMetadata,
 } from '../stellar/stellar.service'
@@ -15,8 +15,7 @@ function canAccessRequest(
   role: Role,
   userId: string,
   supplierId: string,
-  requesterWalletAddress?: string | null,
-  customerWalletAddress?: string | null,
+  customerId?: string | null,
 ) {
   if (role === Role.ADMIN || supplierId === userId) {
     return true
@@ -26,7 +25,7 @@ function canAccessRequest(
     return true
   }
 
-  return role === Role.CUSTOMER && Boolean(requesterWalletAddress && requesterWalletAddress === customerWalletAddress)
+  return role === Role.CUSTOMER && customerId === userId
 }
 
 async function findFinancingRequest(requestId: string) {
@@ -43,6 +42,15 @@ async function findFinancingRequest(requestId: string) {
           id: true,
           name: true,
           email: true,
+          wallets: {
+            where: {
+              isPrimary: true,
+            },
+            select: {
+              walletAddress: true,
+            },
+            take: 1,
+          },
         },
       },
       approvedBy: {
@@ -112,12 +120,9 @@ export async function createFinancingRequest(userId: string, role: Role, invoice
       },
     })
 
-    return tx.financingRequest.update({
+    return tx.financingRequest.findUniqueOrThrow({
       where: {
         id: request.id,
-      },
-      data: {
-        contractRequestId: buildContractRequestId(request.id),
       },
       include: {
         invoice: true,
@@ -162,7 +167,7 @@ export async function listFinancingRequests(
           ? {
               status: baseStatus,
               invoice: {
-                customerWalletAddress: (await requirePrimaryWallet(userId)).walletAddress,
+                customerId: userId,
               },
             }
           : { status: baseStatus }
@@ -173,6 +178,22 @@ export async function listFinancingRequests(
       invoice: true,
       settlement: true,
       platformFee: true,
+      supplier: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          wallets: {
+            where: {
+              isPrimary: true,
+            },
+            select: {
+              walletAddress: true,
+            },
+            take: 1,
+          },
+        },
+      },
     },
     orderBy: {
       createdAt: 'desc',
@@ -186,16 +207,13 @@ export async function getFinancingRequestById(
   role: Role,
 ) {
   const request = await findFinancingRequest(requestId)
-  const customerWallet =
-    role === Role.CUSTOMER ? (await requirePrimaryWallet(userId)).walletAddress : null
 
   if (
     !canAccessRequest(
       role,
       userId,
       request.supplierId,
-      customerWallet,
-      request.invoice.customerWalletAddress,
+      request.invoice.customerId,
     )
   ) {
     throw new AppError('Forbidden', 403)
@@ -222,6 +240,10 @@ export async function approveFinancingRequest(
     throw new AppError('Only pending financing requests can be approved', 400)
   }
 
+  if (request.invoice.status !== InvoiceStatus.FINANCING_REQUESTED) {
+    throw new AppError('Only financing-requested invoices can be approved', 400)
+  }
+
   const updated = await prisma.financingRequest.update({
     where: {
       id: requestId,
@@ -236,6 +258,22 @@ export async function approveFinancingRequest(
       invoice: true,
       settlement: true,
       platformFee: true,
+      supplier: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          wallets: {
+            where: {
+              isPrimary: true,
+            },
+            select: {
+              walletAddress: true,
+            },
+            take: 1,
+          },
+        },
+      },
     },
   })
 
@@ -247,6 +285,147 @@ export async function approveFinancingRequest(
     stellar: {
       ...getStellarMetadata(),
       transactionHash: updated.transactionHash,
+    },
+  }
+}
+
+export async function disburseApprovedFinancingRequest(
+  requestId: string,
+  adminId: string,
+  role: Role,
+  transactionHash: string,
+) {
+  console.log('[financing] disburseApprovedFinancingRequest:start', {
+    requestId,
+    adminId,
+    role,
+  })
+
+  if (role !== Role.ADMIN) {
+    console.log('[financing] disburseApprovedFinancingRequest:forbidden-role', {
+      requestId,
+      adminId,
+      role,
+    })
+    throw new AppError('Only administrators can disburse financing requests', 403)
+  }
+
+  await requireAdminPrimaryWallet(adminId)
+
+  const request = await findFinancingRequest(requestId)
+  console.log('[financing] disburseApprovedFinancingRequest:request-loaded', {
+    requestId,
+    requestStatus: request.status,
+    invoiceStatus: request.invoice.status,
+    supplierId: request.supplierId,
+    grossBorrowAmount: request.grossBorrowAmount,
+  })
+
+  if (request.status !== FinancingStatus.APPROVED) {
+    console.log('[financing] disburseApprovedFinancingRequest:invalid-request-status', {
+      requestId,
+      requestStatus: request.status,
+    })
+    throw new AppError('Only approved financing requests can be disbursed', 400)
+  }
+
+  if (request.invoice.status !== InvoiceStatus.FINANCING_REQUESTED) {
+    console.log('[financing] disburseApprovedFinancingRequest:invalid-invoice-status', {
+      requestId,
+      invoiceId: request.invoiceId,
+      invoiceStatus: request.invoice.status,
+    })
+    throw new AppError('Only financing-requested invoices can be disbursed', 400)
+  }
+
+  const poolInfo = await getPoolInfo()
+  console.log('[financing] disburseApprovedFinancingRequest:pool-check', {
+    requestId,
+    grossBorrowAmount: request.grossBorrowAmount,
+    availableLiquidity: poolInfo.availableLiquidity,
+    totalLiquidity: poolInfo.totalLiquidity,
+  })
+  if (request.grossBorrowAmount > poolInfo.availableLiquidity) {
+    console.log('[financing] disburseApprovedFinancingRequest:insufficient-liquidity', {
+      requestId,
+      grossBorrowAmount: request.grossBorrowAmount,
+      availableLiquidity: poolInfo.availableLiquidity,
+    })
+    throw new AppError('Insufficient pool liquidity to disburse this financing request', 400)
+  }
+
+  const supplierWallet = await requirePrimaryWallet(request.supplierId)
+  console.log('[financing] disburseApprovedFinancingRequest:supplier-wallet', {
+    requestId,
+    supplierId: request.supplierId,
+    supplierWalletAddress: supplierWallet.walletAddress,
+  })
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.poolTransaction.create({
+      data: {
+        type: PoolTransactionType.BORROW,
+        userId: request.supplierId,
+        walletAddress: supplierWallet.walletAddress,
+        amount: request.grossBorrowAmount,
+        transactionHash,
+      },
+    })
+
+    await tx.invoice.update({
+      where: {
+        id: request.invoiceId,
+      },
+      data: {
+        status: InvoiceStatus.FUNDED,
+      },
+    })
+
+    return tx.financingRequest.update({
+      where: {
+        id: requestId,
+      },
+      data: {
+        status: FinancingStatus.ACTIVE,
+        borrowedAt: new Date(),
+        transactionHash,
+      },
+      include: {
+        invoice: true,
+        settlement: true,
+        platformFee: true,
+        supplier: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            wallets: {
+              where: {
+                isPrimary: true,
+              },
+              select: {
+                walletAddress: true,
+              },
+              take: 1,
+            },
+          },
+        },
+      },
+    })
+  })
+
+  console.log('[financing] disburseApprovedFinancingRequest:success', {
+    requestId,
+    transactionHash,
+    updatedStatus: updated.status,
+    invoiceStatus: updated.invoice.status,
+  })
+
+  return {
+    request: updated,
+    pool: await getPoolInfo(),
+    stellar: {
+      ...getStellarMetadata(),
+      transactionHash,
     },
   }
 }
@@ -304,6 +483,42 @@ export async function rejectFinancingRequest(
       transactionHash: updated.transactionHash,
     },
   }
+}
+
+export async function prepareDisbursementTransaction(
+  requestId: string,
+  adminId: string,
+  role: Role,
+) {
+  if (role !== Role.ADMIN) {
+    throw new AppError('Only administrators can disburse financing requests', 403)
+  }
+
+  await requireAdminPrimaryWallet(adminId)
+
+  const request = await findFinancingRequest(requestId)
+
+  if (request.status !== FinancingStatus.APPROVED) {
+    throw new AppError('Only approved financing requests can be disbursed', 400)
+  }
+
+  if (request.invoice.status !== InvoiceStatus.FINANCING_REQUESTED) {
+    throw new AppError('Only financing-requested invoices can be disbursed', 400)
+  }
+
+  const poolInfo = await getPoolInfo()
+  if (request.grossBorrowAmount > poolInfo.availableLiquidity) {
+    throw new AppError('Insufficient pool liquidity to disburse this financing request', 400)
+  }
+
+  const supplierWallet = await requirePrimaryWallet(request.supplierId)
+
+  return buildTreasuryDisbursementPaymentInvocation(
+    adminId,
+    role,
+    supplierWallet.walletAddress,
+    request.grossBorrowAmount,
+  )
 }
 
 export async function borrowAgainstFinancing(

@@ -59,7 +59,7 @@ export function LiquidityPoolPage() {
     const response = await withdraw(shares);
     setWithdrawAmt("");
     toast.success(
-      `Withdrawal invocation prepared via ${response.data.data.function}. Sign with Freighter to complete it.`,
+      `Withdrawal submitted successfully. On-chain hash: ${response.withdrawSubmission.hash.slice(0, 12)}…`,
     );
   };
 
@@ -308,7 +308,7 @@ export function LiquidityPoolPage() {
             onClick={handleWithdraw}
             disabled={withdrawMutation.isPending || !withdrawAmt || !isConnected}
           >
-            {withdrawMutation.isPending ? "⚡ Preparing…" : "⬇ Prepare Withdrawal"}
+            {withdrawMutation.isPending ? "⚡ Withdrawing…" : "⬇ Withdraw from Pool"}
           </button>
         </div>
       </div>

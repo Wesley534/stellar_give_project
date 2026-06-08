@@ -7,11 +7,9 @@ import {
   buildTransactionHash,
   getStellarMetadata,
 } from '../stellar/stellar.service'
-import { requirePrimaryWallet } from '../wallets/wallet.service'
 
 type CreateInvoiceInput = {
-  customerName: string
-  customerWalletAddress?: string
+  customerId: string
   invoiceNumber: string
   invoiceAmount: number
   dueDate: string
@@ -49,8 +47,7 @@ async function ensureInvoiceAccess(invoiceId: string, userId: string, role: Role
     return invoice
   }
 
-  const wallet = await requirePrimaryWallet(userId)
-  if (invoice.customerWalletAddress && invoice.customerWalletAddress === wallet.walletAddress) {
+  if (role === Role.CUSTOMER && invoice.customerId === userId) {
     return invoice
   }
 
@@ -65,11 +62,33 @@ export async function createInvoice(userId: string, role: Role, input: CreateInv
     throw new AppError('Due date must be a valid ISO date', 400)
   }
 
+  // Lookup customer by ID to get the display name for the invoice
+  const customer = await prisma.user.findUnique({
+    where: { id: input.customerId },
+  })
+
+  if (!customer || customer.role !== Role.CUSTOMER) {
+    throw new AppError('Selected customer not found', 400)
+  }
+
+  const existingInvoice = await prisma.invoice.findUnique({
+    where: {
+      supplierId_invoiceNumber: {
+        supplierId: userId,
+        invoiceNumber: input.invoiceNumber,
+      },
+    },
+  })
+
+  if (existingInvoice) {
+    throw new AppError('You already created an invoice with that invoice number', 409)
+  }
+
   const invoice = await prisma.invoice.create({
     data: {
       supplierId: userId,
-      customerName: input.customerName,
-      customerWalletAddress: input.customerWalletAddress,
+      customerId: customer.id,
+      customerName: customer.name,
       invoiceNumber: input.invoiceNumber,
       invoiceAmount: input.invoiceAmount,
       dueDate,
@@ -103,7 +122,7 @@ export async function listInvoices(
   role: Role,
   status?: InvoiceStatus,
 ) {
-  let where: { supplierId?: string; customerWalletAddress?: string; status?: InvoiceStatus } = {}
+  let where: { supplierId?: string; customerId?: string; status?: InvoiceStatus } = {}
 
   if (status) {
     where.status = status
@@ -112,8 +131,7 @@ export async function listInvoices(
   if (role === Role.BORROWER) {
     where.supplierId = userId
   } else if (role === Role.CUSTOMER) {
-    const wallet = await requirePrimaryWallet(userId)
-    where.customerWalletAddress = wallet.walletAddress
+    where.customerId = userId
   }
 
   return prisma.invoice.findMany({
@@ -143,20 +161,12 @@ export async function verifyInvoice(invoiceId: string, userId: string, role: Rol
     throw new AppError('Only the assigned customer can verify this invoice', 403)
   }
 
-  const wallet = await requirePrimaryWallet(userId)
-  const customerWalletAddress = invoice.customerWalletAddress ?? wallet.walletAddress
-
-  if (customerWalletAddress !== wallet.walletAddress) {
-    throw new AppError('Only the assigned customer can verify this invoice', 403)
-  }
-
   const updated = await prisma.invoice.update({
     where: {
       id: invoiceId,
     },
     data: {
       status: InvoiceStatus.VERIFIED,
-      customerWalletAddress,
     },
     include: {
       financingRequest: true,
@@ -180,11 +190,8 @@ export async function rejectInvoice(invoiceId: string, userId: string, role: Rol
     throw new AppError('Funded or settled invoices cannot be rejected', 400)
   }
 
-  if (role !== Role.ADMIN) {
-    const wallet = await requirePrimaryWallet(userId)
-    if (invoice.customerWalletAddress && invoice.customerWalletAddress !== wallet.walletAddress) {
-      throw new AppError('Only the assigned customer can reject this invoice', 403)
-    }
+  if (role === Role.CUSTOMER && invoice.customerId !== userId) {
+    throw new AppError('Only the assigned customer can reject this invoice', 403)
   }
 
   const updated = await prisma.invoice.update({

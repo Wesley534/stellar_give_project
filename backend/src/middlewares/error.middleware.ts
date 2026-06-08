@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client'
 import { NextFunction, Request, Response } from 'express'
 import { ZodError } from 'zod'
 
@@ -29,6 +30,22 @@ export function errorHandler(
       message: 'Validation failed',
       errors: error.flatten(),
     })
+  }
+
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === 'P2002') {
+      return res.status(409).json({
+        success: false,
+        message: 'A record with that unique value already exists',
+      })
+    }
+
+    if (error.code === 'P2003') {
+      return res.status(400).json({
+        success: false,
+        message: 'The referenced record no longer exists',
+      })
+    }
   }
 
   if (error instanceof AppError) {

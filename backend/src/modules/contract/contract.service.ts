@@ -394,6 +394,110 @@ async function buildClassicTransaction(
   }
 }
 
+function normalizePaymentAmount(amount: number) {
+  const normalized = Number(amount.toFixed(7))
+  if (!Number.isFinite(normalized) || normalized <= 0) {
+    throw new AppError('Payment amount must be positive', 400)
+  }
+
+  return normalized
+}
+
+export async function buildTreasuryDisbursementPaymentInvocation(
+  userId: string,
+  role: Role,
+  destination: string,
+  amount: number,
+) {
+  assertRole(role, [Role.ADMIN], 'Only administrators can disburse treasury funds')
+
+  const wallet = await requireAdminPrimaryWallet(userId)
+  const sourceAccount = stellarConfig.adminSourceAccount ?? wallet.walletAddress
+
+  return buildClassicTransaction(sourceAccount, 'treasury_disbursement_payment', [
+    'payment',
+    '--destination',
+    destination,
+    '--amount',
+    String(normalizePaymentAmount(amount)),
+  ])
+}
+
+export async function buildCustomerTreasuryRepaymentInvocation(
+  userId: string,
+  role: Role,
+  amount: number,
+) {
+  assertRole(role, [Role.CUSTOMER], 'Only customers can repay funded invoices')
+
+  const wallet = await requirePrimaryWallet(userId)
+
+  return buildClassicTransaction(wallet.walletAddress, 'customer_treasury_repayment', [
+    'payment',
+    '--destination',
+    stellarConfig.adminSourceAccount ?? stellarConfig.readSourceAccount,
+    '--amount',
+    String(normalizePaymentAmount(amount)),
+  ])
+}
+
+export async function submitTreasurySupplierPayout(
+  destination: string,
+  amount: number,
+) {
+  if (!stellarConfig.adminSourceAccount || !stellarConfig.adminSecretKey) {
+    throw new AppError('Treasury payout is not configured on the backend', 503)
+  }
+
+  const normalizedAmount = normalizePaymentAmount(amount)
+  console.log('[contract] submitTreasurySupplierPayout:start', {
+    sourceAccount: stellarConfig.adminSourceAccount,
+    destination,
+    amount,
+    normalizedAmount,
+  })
+  const args = [
+    'tx',
+    'new',
+    'payment',
+    '--source-account',
+    stellarConfig.adminSourceAccount,
+    '--sign-with-key',
+    stellarConfig.adminSecretKey,
+    '--destination',
+    destination,
+    '--amount',
+    String(normalizedAmount),
+  ]
+  appendRpcArgs(args)
+
+  const { stdout } = await runStellarCommand(args)
+  const parsedOutput = parseCliOutput(stdout)
+  const transactionHash = extractTransactionHash(parsedOutput)
+  console.log('[contract] submitTreasurySupplierPayout:built', {
+    destination,
+    normalizedAmount,
+    transactionHash,
+    parsedOutput,
+  })
+
+  const confirmedOutput = transactionHash
+    ? await waitForTransactionResult(transactionHash)
+    : parsedOutput
+
+  console.log('[contract] submitTreasurySupplierPayout:success', {
+    destination,
+    normalizedAmount,
+    transactionHash,
+    confirmedOutput,
+  })
+
+  return {
+    hash: transactionHash,
+    output: confirmedOutput,
+  }
+}
+
 async function simulateSorobanTransaction(sourceAccount: string, txXdr: string) {
   if (!txXdr) {
     throw new AppError('Missing Soroban transaction XDR before simulation', 502)
@@ -607,11 +711,11 @@ export async function getContractInvestorPosition(userId: string, role: Role) {
   })
 }
 
-export function getContractInvoice(invoiceId: number) {
+export function getContractInvoice(invoiceId: string) {
   return readContract('get_invoice', { invoice_id: invoiceId })
 }
 
-export function getContractFinancingRequest(requestId: number) {
+export function getContractFinancingRequest(requestId: string) {
   return readContract('get_financing_request', { request_id: requestId })
 }
 
@@ -820,7 +924,7 @@ export async function buildCreateInvoiceInvocation(
   })
 }
 
-export async function buildVerifyInvoiceInvocation(userId: string, role: Role, invoiceId: number) {
+export async function buildVerifyInvoiceInvocation(userId: string, role: Role, invoiceId: string) {
   assertRole(role, [Role.CUSTOMER], 'Only the assigned customer can verify invoices')
 
   const sourceAccount = (await requirePrimaryWallet(userId)).walletAddress
@@ -831,7 +935,7 @@ export async function buildVerifyInvoiceInvocation(userId: string, role: Role, i
   })
 }
 
-export async function buildRejectInvoiceInvocation(userId: string, role: Role, invoiceId: number) {
+export async function buildRejectInvoiceInvocation(userId: string, role: Role, invoiceId: string) {
   assertRole(role, [Role.CUSTOMER, Role.ADMIN], 'Only the customer or admin can reject invoices')
 
   const sourceAccount =
@@ -870,7 +974,7 @@ export async function buildRequestFinancingInvocation(
 export async function buildApproveFinancingInvocation(
   userId: string,
   role: Role,
-  requestId: number,
+  requestId: string,
 ) {
   assertRole(role, [Role.ADMIN], 'Only administrators can approve financing on-chain')
 
@@ -885,7 +989,7 @@ export async function buildApproveFinancingInvocation(
 export async function buildRejectFinancingInvocation(
   userId: string,
   role: Role,
-  requestId: number,
+  requestId: string,
 ) {
   assertRole(role, [Role.ADMIN], 'Only administrators can reject financing on-chain')
 
@@ -897,7 +1001,7 @@ export async function buildRejectFinancingInvocation(
   })
 }
 
-export async function buildBorrowInvocation(userId: string, role: Role, requestId: number) {
+export async function buildBorrowInvocation(userId: string, role: Role, requestId: string) {
   assertRole(role, [Role.BORROWER], 'Only borrowers can borrow against financing')
 
   const wallet = await requirePrimaryWallet(userId)
@@ -910,7 +1014,7 @@ export async function buildBorrowInvocation(userId: string, role: Role, requestI
 export async function buildSettleInvoiceInvocation(
   userId: string,
   role: Role,
-  requestId: number,
+  requestId: string,
 ) {
   assertRole(role, [Role.CUSTOMER], 'Only the assigned customer can settle invoices')
 
