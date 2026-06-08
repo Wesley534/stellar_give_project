@@ -18,6 +18,7 @@ import {
   getInvestorPosition,
   getPoolInfo,
   recordContractTokenDeposit,
+  recordPoolWithdrawal,
   type InvestorActivityRecord,
   type InvestorDepositRecord,
   type InvestorEarningsResponse,
@@ -312,7 +313,60 @@ export function usePool() {
   });
 
   const withdrawMutation = useMutation({
-    mutationFn: async (shareAmount: number) => buildWithdraw(shareAmount),
+    mutationFn: async (shareAmount: number) => {
+      const walletAddress = earnings.walletAddress;
+      const metadata = contractMetadataQuery.data?.data?.data;
+      const normalizedShareAmount = Math.trunc(shareAmount);
+
+      console.log("[usePool] withdraw flow start", {
+        shareAmount,
+        normalizedShareAmount,
+        walletAddress,
+        network: metadata?.network,
+        contractId: metadata?.contractId,
+      });
+
+      if (!walletAddress) {
+        throw new Error("Connect and sync your wallet before withdrawing.");
+      }
+
+      if (!metadata?.networkPassphrase) {
+        throw new Error("Contract network metadata is unavailable.");
+      }
+
+      if (normalizedShareAmount <= 0) {
+        throw new Error("Withdrawal share amount must be a whole number above zero.");
+      }
+
+      if (normalizedShareAmount !== shareAmount) {
+        throw new Error("Withdrawals currently support whole shares only.");
+      }
+
+      const withdrawBuild = await buildWithdraw(normalizedShareAmount);
+      console.log("[usePool] withdraw flow built", {
+        function: withdrawBuild.data.data.function,
+      });
+
+      const withdrawSubmission = await signAndSubmitBuiltTransaction(
+        withdrawBuild.data.data,
+        metadata.networkPassphrase,
+        walletAddress,
+      );
+
+      await recordPoolWithdrawal({
+        shareAmount: normalizedShareAmount,
+        transactionHash: withdrawSubmission.data.data.hash,
+      });
+
+      console.log("[usePool] withdraw flow completed", {
+        transactionHash: withdrawSubmission.data.data.hash,
+      });
+
+      return {
+        withdrawBuild: withdrawBuild.data.data,
+        withdrawSubmission: withdrawSubmission.data.data,
+      };
+    },
     onSuccess: refresh,
   });
 

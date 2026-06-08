@@ -1,22 +1,23 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import axios from "axios";
 import toast from "react-hot-toast";
 
-import {
-  buildApproveFinancing,
-  buildRejectFinancing,
-  getContractMetadata,
-} from "../api/services/contract";
+import { getContractMetadata } from "../api/services/contract";
 import {
   approveFinancingRequest,
+  finalizeDisbursement,
   listFinancingRequests,
+  prepareDisbursement,
   rejectFinancingRequest,
   type BackendFinancingStatus,
+  type FinancingListEnvelope,
   type FinancingRecord,
 } from "../api/services/financing";
 import { getPoolInfo } from "../api/services/pool";
 import { FinancingRequestCard } from "../components/FinancingRequestCard";
 import { StatusBadge } from "../components/StatusBadge";
+import { signAndSubmitBuiltTransaction } from "../utils/stellarSigning";
 
 type UiFinancingStatus =
   | "PENDING_ADMIN_REVIEW"
@@ -66,7 +67,7 @@ function mapRequest(record: FinancingRecord): UiFinancingRequest {
   return {
     id: record.id,
     borrowerName: record.supplier?.name ?? "Unknown borrower",
-    walletAddress: record.invoice.customerWalletAddress ?? "No customer wallet",
+    walletAddress: record.supplier?.wallets?.[0]?.walletAddress ?? "No borrower wallet",
     invoiceNumber: record.invoice.invoiceNumber,
     invoiceAmount: record.invoice.invoiceAmount,
     borrowAmount: record.grossBorrowAmount,
@@ -96,14 +97,14 @@ export function AdminDashboard({
     queryFn: getPoolInfo,
   });
 
-  const financingQuery = useQuery({
+  const financingQuery = useQuery<FinancingListEnvelope, Error>({
     queryKey: ["financing-requests"],
-    queryFn: listFinancingRequests,
+    queryFn: () => listFinancingRequests(),
   });
 
   const contractMetadata = metadataQuery.data?.data?.data;
   const pool = poolQuery.data?.data?.data;
-  const records = financingQuery.data?.data?.data ?? [];
+  const records = financingQuery.data?.data ?? [];
   const requests = useMemo(() => records.map(mapRequest), [records]);
 
   const pending = requests.filter((request) => request.status === "PENDING_ADMIN_REVIEW");
@@ -127,46 +128,90 @@ export function AdminDashboard({
   };
 
   const approveMutation = useMutation({
-    mutationFn: async (requestId: string) => {
-      const contractBuild = await buildApproveFinancing(requestId);
+    mutationFn: async (request: UiFinancingRequest) => {
       const dbUpdate = await approveFinancingRequest(
-        requestId,
+        request.id,
         "Approved from the admin dashboard after wallet verification.",
       );
 
-      return { contractBuild, dbUpdate };
+      return { dbUpdate };
     },
-    onSuccess: async ({ contractBuild, dbUpdate }) => {
+    onSuccess: async ({ dbUpdate }) => {
       setActionLog(
-        `Prepared on-chain approval via ${contractBuild.data.data.function} and updated backend status for ${dbUpdate.data.data.request.id}.`,
+        `Approved financing request ${dbUpdate.data.request.id} and marked it ready for fund disbursement.`,
       );
       toast.success("Financing request approved");
       await refreshData();
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Approval failed");
+      const message = axios.isAxiosError<{ message?: string }>(error)
+        ? error.response?.data?.message ?? error.message
+        : error instanceof Error
+          ? error.message
+          : "Approval failed";
+      toast.error(message);
     },
   });
 
   const rejectMutation = useMutation({
-    mutationFn: async (requestId: string) => {
-      const contractBuild = await buildRejectFinancing(requestId);
+    mutationFn: async (request: UiFinancingRequest) => {
       const dbUpdate = await rejectFinancingRequest(
-        requestId,
+        request.id,
         "Rejected from the admin dashboard after wallet verification.",
       );
 
-      return { contractBuild, dbUpdate };
+      return { dbUpdate };
     },
-    onSuccess: async ({ contractBuild, dbUpdate }) => {
+    onSuccess: async ({ dbUpdate }) => {
       setActionLog(
-        `Prepared on-chain rejection via ${contractBuild.data.data.function} and updated backend status for ${dbUpdate.data.data.request.id}.`,
+        `Rejected financing request ${dbUpdate.data.request.id} and returned the invoice to verified status.`,
       );
       toast.success("Financing request rejected");
       await refreshData();
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Rejection failed");
+      const message = axios.isAxiosError<{ message?: string }>(error)
+        ? error.response?.data?.message ?? error.message
+        : error instanceof Error
+          ? error.message
+          : "Rejection failed";
+      toast.error(message);
+    },
+  });
+
+  const disburseMutation = useMutation({
+    mutationFn: async (request: UiFinancingRequest) => {
+      if (!connectedWalletAddress) {
+        throw new Error("Connect the admin wallet before disbursing funds.");
+      }
+
+      if (!contractMetadata?.networkPassphrase) {
+        throw new Error("Contract network metadata is unavailable.");
+      }
+
+      const prepared = await prepareDisbursement(request.id);
+      const submission = await signAndSubmitBuiltTransaction(
+        prepared.data,
+        contractMetadata.networkPassphrase,
+        connectedWalletAddress,
+      );
+      const dbUpdate = await finalizeDisbursement(request.id, submission.data.data.hash);
+      return { dbUpdate };
+    },
+    onSuccess: async ({ dbUpdate }) => {
+      setActionLog(
+        `Disbursed funds for financing request ${dbUpdate.data.request.id} to the borrower wallet and marked the invoice funded.`,
+      );
+      toast.success("Funds disbursed successfully");
+      await refreshData();
+    },
+    onError: (error) => {
+      const message = axios.isAxiosError<{ message?: string }>(error)
+        ? error.response?.data?.message ?? error.message
+        : error instanceof Error
+          ? error.message
+          : "Disbursement failed";
+      toast.error(message);
     },
   });
 
@@ -176,7 +221,13 @@ export function AdminDashboard({
       return;
     }
 
-    approveMutation.mutate(id);
+    const request = requests.find((item) => item.id === id);
+    if (!request) {
+      toast.error("Financing request not found.");
+      return;
+    }
+
+    approveMutation.mutate(request);
   };
 
   const handleReject = (id: string) => {
@@ -185,7 +236,28 @@ export function AdminDashboard({
       return;
     }
 
-    rejectMutation.mutate(id);
+    const request = requests.find((item) => item.id === id);
+    if (!request) {
+      toast.error("Financing request not found.");
+      return;
+    }
+
+    rejectMutation.mutate(request);
+  };
+
+  const handleDisburse = (id: string) => {
+    if (!isAdminWalletConnected) {
+      toast.error("Connect the configured admin wallet before disbursing funds.");
+      return;
+    }
+
+    const request = requests.find((item) => item.id === id);
+    if (!request) {
+      toast.error("Financing request not found.");
+      return;
+    }
+
+    disburseMutation.mutate(request);
   };
 
   const utilizationPct =
@@ -399,6 +471,7 @@ export function AdminDashboard({
                 role="ADMIN"
                 onApprove={handleApprove}
                 onReject={handleReject}
+                onBorrow={handleDisburse}
               />
             ))}
           </div>

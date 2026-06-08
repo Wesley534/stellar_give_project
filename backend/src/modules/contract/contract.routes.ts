@@ -88,7 +88,8 @@ router.get(
 
 router.get('/invoices/:id', authenticate, validate(contractIdParamSchema), async (req, res, next) => {
   try {
-    const payload = await getContractInvoice(Number(req.params.id))
+    const contractInvoiceId = req.params.id as string
+    const payload = await getContractInvoice(contractInvoiceId)
     res.json(successResponse('Contract invoice fetched successfully', payload))
   } catch (error) {
     next(error)
@@ -97,7 +98,8 @@ router.get('/invoices/:id', authenticate, validate(contractIdParamSchema), async
 
 router.get('/requests/:id', authenticate, validate(contractIdParamSchema), async (req, res, next) => {
   try {
-    const payload = await getContractFinancingRequest(Number(req.params.id))
+    const contractRequestId = req.params.id as string
+    const payload = await getContractFinancingRequest(contractRequestId)
     res.json(successResponse('Contract financing request fetched successfully', payload))
   } catch (error) {
     next(error)
@@ -297,10 +299,11 @@ router.post(
   async (req, res, next) => {
     try {
       const authReq = req as AuthenticatedRequest
+      const contractInvoiceId = req.params.id as string
       const payload = await buildVerifyInvoiceInvocation(
         authReq.user.id,
         authReq.user.role,
-        Number(req.params.id),
+        contractInvoiceId,
       )
       res.json(successResponse('Contract verify-invoice invocation built successfully', payload))
     } catch (error) {
@@ -317,10 +320,11 @@ router.post(
   async (req, res, next) => {
     try {
       const authReq = req as AuthenticatedRequest
+      const contractInvoiceId = req.params.id as string
       const payload = await buildRejectInvoiceInvocation(
         authReq.user.id,
         authReq.user.role,
-        Number(req.params.id),
+        contractInvoiceId,
       )
       res.json(successResponse('Contract reject-invoice invocation built successfully', payload))
     } catch (error) {
@@ -357,10 +361,11 @@ router.post(
   async (req, res, next) => {
     try {
       const authReq = req as AuthenticatedRequest
+      const contractRequestId = req.params.id as string
       const payload = await buildApproveFinancingInvocation(
         authReq.user.id,
         authReq.user.role,
-        Number(req.params.id),
+        contractRequestId,
       )
       res.json(successResponse('Contract approve-financing invocation built successfully', payload))
     } catch (error) {
@@ -377,10 +382,11 @@ router.post(
   async (req, res, next) => {
     try {
       const authReq = req as AuthenticatedRequest
+      const contractRequestId = req.params.id as string
       const payload = await buildRejectFinancingInvocation(
         authReq.user.id,
         authReq.user.role,
-        Number(req.params.id),
+        contractRequestId,
       )
       res.json(successResponse('Contract reject-financing invocation built successfully', payload))
     } catch (error) {
@@ -397,10 +403,11 @@ router.post(
   async (req, res, next) => {
     try {
       const authReq = req as AuthenticatedRequest
+      const contractRequestId = req.params.id as string
       const payload = await buildBorrowInvocation(
         authReq.user.id,
         authReq.user.role,
-        Number(req.params.id),
+        contractRequestId,
       )
       res.json(successResponse('Contract borrow invocation built successfully', payload))
     } catch (error) {
@@ -417,10 +424,11 @@ router.post(
   async (req, res, next) => {
     try {
       const authReq = req as AuthenticatedRequest
+      const contractRequestId = req.params.id as string
       const payload = await buildSettleInvoiceInvocation(
         authReq.user.id,
         authReq.user.role,
-        Number(req.params.id),
+        contractRequestId,
       )
       res.json(successResponse('Contract settlement invocation built successfully', payload))
     } catch (error) {

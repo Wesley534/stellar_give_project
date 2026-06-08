@@ -16,6 +16,7 @@ import {
 } from "@stellar/freighter-api";
 
 import { connectWallet as connectWalletApi } from "../api/services/wallet";
+import { AUTH_STORAGE_EVENT, getStoredToken } from "../utils/storage";
 
 type WalletNetwork = "TESTNET" | "MAINNET";
 
@@ -88,6 +89,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [network, setNetwork] = useState<WalletNetwork>("TESTNET");
   const [isConnecting, setIsConnecting] = useState(false);
+  const [authToken, setAuthToken] = useState<string | null>(getStoredToken());
 
   useEffect(() => {
     const storedAddress = localStorage.getItem(WALLET_ADDRESS_KEY);
@@ -103,6 +105,20 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const syncAuthToken = () => {
+      setAuthToken(getStoredToken());
+    };
+
+    window.addEventListener(AUTH_STORAGE_EVENT, syncAuthToken);
+    window.addEventListener("storage", syncAuthToken);
+
+    return () => {
+      window.removeEventListener(AUTH_STORAGE_EVENT, syncAuthToken);
+      window.removeEventListener("storage", syncAuthToken);
+    };
+  }, []);
+
+  useEffect(() => {
     const token = localStorage.getItem("token");
 
     if (!token || !walletAddress) {
@@ -115,7 +131,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }).catch(() => {
       // Keep the local connection and let the requesting page surface API errors if sync fails.
     });
-  }, [walletAddress, network]);
+  }, [authToken, walletAddress, network]);
 
   const connect = async () => {
     setIsConnecting(true);

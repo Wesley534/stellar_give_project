@@ -8,8 +8,12 @@ import {
 } from '../../middlewares/auth.middleware'
 import { validate } from '../../middlewares/validate.middleware'
 import { successResponse } from '../../utils/api-response'
-import { settlementIdSchema } from './settlement.schemas'
-import { getSettlementByRequestId, payInvoiceSettlement } from './settlement.service'
+import { finalizeSettlementSchema, settlementIdSchema } from './settlement.schemas'
+import {
+  getSettlementByRequestId,
+  payInvoiceSettlement,
+  prepareSettlementPayment,
+} from './settlement.service'
 
 const router = Router()
 
@@ -36,10 +40,31 @@ const router = Router()
  *         description: Financing request not found
  */
 router.post(
-  '/:id/pay-invoice',
+  '/:id/pay-invoice/prepare',
   authenticate,
   authorize(Role.CUSTOMER),
   validate(settlementIdSchema),
+  async (req, res, next) => {
+    try {
+      const authReq = req as AuthenticatedRequest
+      const requestId = req.params.id as string
+      const payload = await prepareSettlementPayment(
+        requestId,
+        authReq.user.id,
+        authReq.user.role,
+      )
+      res.json(successResponse('Invoice settlement transaction prepared successfully', payload))
+    } catch (error) {
+      next(error)
+    }
+  },
+)
+
+router.post(
+  '/:id/pay-invoice',
+  authenticate,
+  authorize(Role.CUSTOMER),
+  validate(finalizeSettlementSchema),
   async (req, res, next) => {
     try {
       const authReq = req as AuthenticatedRequest
@@ -48,6 +73,7 @@ router.post(
         requestId,
         authReq.user.id,
         authReq.user.role,
+        req.body.transactionHash,
       )
       res.json(successResponse('Invoice settled successfully', payload))
     } catch (error) {

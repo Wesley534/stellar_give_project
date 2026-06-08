@@ -1,100 +1,400 @@
-import { useState } from "react";
-
-import { useFinancing, type FinancingStatus } from "../hooks/useFinancing";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import axios from "axios";
 import { FinancingRequestCard } from "../components/FinancingRequestCard";
+import { InvoiceCard } from "../components/InvoiceCard";
 import { StatusBadge } from "../components/StatusBadge";
 import useGetCurrentUser from "../hooks/authHooks/useGetCurrentUser";
+import { useWallet } from "../context/WalletContext";
+import {
+  approveFinancingRequest,
+  finalizeDisbursement,
+  listFinancingRequests,
+  prepareDisbursement,
+  rejectFinancingRequest,
+  type BackendFinancingStatus,
+  type FinancingListEnvelope,
+  type FinancingRecord,
+} from "../api/services/financing";
+import { getContractMetadata } from "../api/services/contract";
+import { listInvoices, rejectInvoice, verifyInvoice, type InvoiceListEnvelope } from "../api/services/invoices";
+import { payInvoiceSettlement, prepareInvoiceSettlement } from "../api/services/settlements";
+import { signAndSubmitBuiltTransaction } from "../utils/stellarSigning";
 
-const STATUS_FILTERS: { label: string; value: FinancingStatus | "ALL" }[] = [
+type FilterStatus =
+  | "ALL"
+  | "PENDING_APPROVAL"
+  | "APPROVED"
+  | "ACTIVE"
+  | "SETTLED"
+  | "REJECTED"
+  | "PENDING_VERIFICATION"
+  | "VERIFIED"
+  | "FINANCING_REQUESTED"
+  | "FUNDED";
+
+type UiFinancingStatus =
+  | "PENDING_ADMIN_REVIEW"
+  | "APPROVED"
+  | "BORROWED"
+  | "REPAID"
+  | "REJECTED"
+  | "CLOSED";
+
+type UiFinancingRequest = {
+  id: string;
+  borrowerName: string;
+  walletAddress: string;
+  invoiceNumber: string;
+  invoiceAmount: number;
+  borrowAmount: number;
+  repaymentAmount: number;
+  dueDate: string;
+  status: UiFinancingStatus;
+  description: string;
+  createdAt: string;
+};
+
+const CUSTOMER_STATUS_FILTERS: { label: string; value: FilterStatus }[] = [
   { label: "All", value: "ALL" },
-  { label: "Pending", value: "PENDING_ADMIN_REVIEW" },
-  { label: "Approved", value: "APPROVED" },
-  { label: "Borrowed", value: "BORROWED" },
-  { label: "Repaid", value: "REPAID" },
+  { label: "Pending Verification", value: "PENDING_VERIFICATION" },
+  { label: "Verified", value: "VERIFIED" },
+  { label: "Financing Requested", value: "FINANCING_REQUESTED" },
+  { label: "Funded", value: "FUNDED" },
+  { label: "Settled", value: "SETTLED" },
   { label: "Rejected", value: "REJECTED" },
 ];
 
-export function FinancingRequestsPage() {
-  const { requests, approve, reject, borrow, repay } = useFinancing();
-  const [filter, setFilter] = useState<FinancingStatus | "ALL">("ALL");
-  const [view, setView] = useState<"cards" | "table">("cards");
-  const [toast, setToast] = useState("");
+const FINANCING_STATUS_FILTERS: { label: string; value: FilterStatus }[] = [
+  { label: "All", value: "ALL" },
+  { label: "Pending Review", value: "PENDING_APPROVAL" },
+  { label: "Approved", value: "APPROVED" },
+  { label: "Active", value: "ACTIVE" },
+  { label: "Settled", value: "SETTLED" },
+  { label: "Rejected", value: "REJECTED" },
+];
 
+function formatDate(value?: string | null) {
+  if (!value) return "N/A";
+  return new Date(value).toLocaleDateString();
+}
+
+function mapStatus(status: BackendFinancingStatus): UiFinancingStatus {
+  switch (status) {
+    case "PENDING_APPROVAL":
+      return "PENDING_ADMIN_REVIEW";
+    case "APPROVED":
+      return "APPROVED";
+    case "ACTIVE":
+      return "BORROWED";
+    case "SETTLED":
+      return "REPAID";
+    case "REJECTED":
+      return "REJECTED";
+    default:
+      return "CLOSED";
+  }
+}
+
+function mapRequest(record: FinancingRecord): UiFinancingRequest {
+  return {
+    id: record.id,
+    borrowerName: record.supplier?.name ?? "Unknown borrower",
+    walletAddress: record.supplier?.wallets?.[0]?.walletAddress ?? "No borrower wallet",
+    invoiceNumber: record.invoice.invoiceNumber,
+    invoiceAmount: record.invoice.invoiceAmount,
+    borrowAmount: record.grossBorrowAmount,
+    repaymentAmount: record.expectedSettlementAmount,
+    dueDate: formatDate(record.invoice.dueDate),
+    status: mapStatus(record.status),
+    description: `Advance ${record.advanceRateBps / 100}% · Interest ${record.interestRateBps / 100}% · Fee ${record.processingFeeBps / 100}%`,
+    createdAt: formatDate(record.createdAt),
+  };
+}
+
+export function FinancingRequestsPage() {
+  const [filter, setFilter] = useState<FilterStatus>("ALL");
+  const [view, setView] = useState<"cards" | "table">("cards");
+  const [toastMessage, setToastMessage] = useState("");
+
+  const queryClient = useQueryClient();
+  const { walletAddress: connectedWalletAddress } = useWallet();
   const { data } = useGetCurrentUser();
   const user = data?.data?.data;
+  const role = user?.role ?? "BORROWER";
+  const isCustomer = role === "CUSTOMER";
+  const isAdmin = role === "ADMIN";
+
+  const metadataQuery = useQuery({
+    queryKey: ["contract-metadata"],
+    queryFn: getContractMetadata,
+    enabled: isAdmin || isCustomer,
+  });
+
+  const invoiceQuery = useQuery<InvoiceListEnvelope, Error>({
+    queryKey: ["customer-invoices", filter],
+    queryFn: () =>
+      listInvoices(filter === "ALL" ? undefined : (filter as "PENDING_VERIFICATION" | "VERIFIED" | "FINANCING_REQUESTED" | "FUNDED" | "SETTLED" | "REJECTED")),
+    enabled: isCustomer,
+  });
+
+  const financingQuery = useQuery<FinancingListEnvelope, Error>({
+    queryKey: ["all-financing-requests", filter, role],
+    queryFn: () =>
+      listFinancingRequests(
+        filter === "ALL" || isCustomer
+          ? undefined
+          : (filter as BackendFinancingStatus),
+      ),
+    enabled: !isCustomer,
+  });
+
+  const contractMetadata = metadataQuery.data?.data?.data;
+  const adminWalletAddress = contractMetadata?.adminSourceAccount ?? null;
+  const isAdminWalletConnected = Boolean(
+    connectedWalletAddress &&
+      adminWalletAddress &&
+      connectedWalletAddress === adminWalletAddress,
+  );
+
+  const customerInvoices = invoiceQuery.data?.data ?? [];
+  const financingRecords = financingQuery.data?.data ?? [];
+  const requests = useMemo(() => financingRecords.map(mapRequest), [financingRecords]);
+
+  const refreshFinancing = async () => {
+    await queryClient.invalidateQueries({ queryKey: ["all-financing-requests"] });
+    await queryClient.invalidateQueries({ queryKey: ["financing-requests"] });
+  };
+
+  const verifyMutation = useMutation({
+    mutationFn: async (invoiceId: string) => verifyInvoice(invoiceId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["customer-invoices"] });
+      showToast("Invoice verified successfully");
+    },
+    onError: (error) => {
+      showToast(
+        error instanceof Error ? error.message : "Invoice verification failed",
+      );
+    },
+  });
+
+  const rejectInvoiceMutation = useMutation({
+    mutationFn: async (invoiceId: string) => rejectInvoice(invoiceId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["customer-invoices"] });
+      showToast("Invoice rejected successfully");
+    },
+    onError: (error) => {
+      showToast(
+        error instanceof Error ? error.message : "Invoice rejection failed",
+      );
+    },
+  });
+
+  const payMutation = useMutation({
+    mutationFn: async (requestId: string) => {
+      if (!connectedWalletAddress) {
+        throw new Error("Connect your wallet before paying the invoice.");
+      }
+
+      if (!contractMetadata?.networkPassphrase) {
+        throw new Error("Contract network metadata is unavailable.");
+      }
+
+      const prepared = await prepareInvoiceSettlement(requestId);
+      const submission = await signAndSubmitBuiltTransaction(
+        prepared.data,
+        contractMetadata.networkPassphrase,
+        connectedWalletAddress,
+      );
+
+      return payInvoiceSettlement(requestId, submission.data.data.hash);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["customer-invoices"] });
+      await queryClient.invalidateQueries({ queryKey: ["all-financing-requests"] });
+      showToast("Invoice payment recorded successfully");
+    },
+    onError: (error) => {
+      const message = axios.isAxiosError<{ message?: string }>(error)
+        ? error.response?.data?.message ?? error.message
+        : error instanceof Error
+          ? error.message
+          : "Invoice payment failed";
+      showToast(message);
+    },
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: async (id: string) =>
+      approveFinancingRequest(id, "Approved from all requests page."),
+    onSuccess: async () => {
+      await refreshFinancing();
+      showToast("Financing request approved");
+    },
+    onError: (error) => {
+      const message = axios.isAxiosError<{ message?: string }>(error)
+        ? error.response?.data?.message ?? error.message
+        : error instanceof Error
+          ? error.message
+          : "Approval failed";
+      showToast(message);
+    },
+  });
+
+  const rejectFinancingMutation = useMutation({
+    mutationFn: async (id: string) =>
+      rejectFinancingRequest(id, "Rejected from all requests page."),
+    onSuccess: async () => {
+      await refreshFinancing();
+      showToast("Financing request rejected");
+    },
+    onError: (error) => {
+      const message = axios.isAxiosError<{ message?: string }>(error)
+        ? error.response?.data?.message ?? error.message
+        : error instanceof Error
+          ? error.message
+          : "Rejection failed";
+      showToast(message);
+    },
+  });
+
+  const disburseMutation = useMutation({
+    mutationFn: async (id: string) => {
+      if (!connectedWalletAddress) {
+        throw new Error("Connect the admin wallet before disbursing funds.");
+      }
+
+      if (!contractMetadata?.networkPassphrase) {
+        throw new Error("Contract network metadata is unavailable.");
+      }
+
+      const prepared = await prepareDisbursement(id);
+      const submission = await signAndSubmitBuiltTransaction(
+        prepared.data,
+        contractMetadata.networkPassphrase,
+        connectedWalletAddress,
+      );
+
+      return finalizeDisbursement(id, submission.data.data.hash);
+    },
+    onSuccess: async () => {
+      await refreshFinancing();
+      showToast("Funds disbursed successfully");
+    },
+    onError: (error) => {
+      const message = axios.isAxiosError<{ message?: string }>(error)
+        ? error.response?.data?.message ?? error.message
+        : error instanceof Error
+          ? error.message
+          : "Disbursement failed";
+      showToast(message);
+    },
+  });
 
   const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(""), 3000);
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(""), 3000);
   };
 
-  const filtered =
-    filter === "ALL" ? requests : requests.filter((r) => r.status === filter);
-  const role = user?.role ?? "BORROWER";
+  const handleVerifyInvoice = async (invoiceId: string) => {
+    await verifyMutation.mutateAsync(invoiceId);
+  };
+
+  const handleRejectInvoice = async (invoiceId: string) => {
+    await rejectInvoiceMutation.mutateAsync(invoiceId);
+  };
+
+  const handlePayInvoice = async (requestId: string) => {
+    await payMutation.mutateAsync(requestId);
+  };
+
+  const requireAdminWallet = () => {
+    if (!isAdmin) return true;
+    if (!isAdminWalletConnected) {
+      showToast("Connect the configured admin wallet before taking admin actions.");
+      return false;
+    }
+    return true;
+  };
 
   const handleApprove = (id: string) => {
-    approve(id);
-    showToast("✅ Request approved");
+    if (!requireAdminWallet()) return;
+    approveMutation.mutate(id);
   };
+
   const handleReject = (id: string) => {
-    reject(id);
-    showToast("🚫 Request rejected");
+    if (!requireAdminWallet()) return;
+    rejectFinancingMutation.mutate(id);
   };
-  const handleBorrow = async (id: string) => {
-    await new Promise((r) => setTimeout(r, 600));
-    borrow(id);
-    showToast("⚡ Funds borrowed");
+
+  const handleDisburse = (id: string) => {
+    if (!requireAdminWallet()) return;
+    disburseMutation.mutate(id);
   };
-  const handleRepay = async (id: string) => {
-    await new Promise((r) => setTimeout(r, 600));
-    repay(id);
-    showToast("💰 Loan repaid");
-  };
+
+  const statusFilters = isCustomer ? CUSTOMER_STATUS_FILTERS : FINANCING_STATUS_FILTERS;
 
   return (
     <div className="animate-in">
-      {/* Stats row */}
       <div className="stats-grid" style={{ marginBottom: "1.5rem" }}>
-        {[
-          {
-            label: "Total",
-            value: requests.length,
-            color: "var(--text-primary)",
-          },
-          {
-            label: "Pending",
-            value: requests.filter((r) => r.status === "PENDING_ADMIN_REVIEW")
-              .length,
-            color: "var(--accent-amber)",
-          },
-          {
-            label: "Approved",
-            value: requests.filter((r) => r.status === "APPROVED").length,
-            color: "var(--accent-cyan)",
-          },
-          {
-            label: "Active",
-            value: requests.filter((r) => r.status === "BORROWED").length,
-            color: "var(--accent-purple)",
-          },
-          {
-            label: "Repaid",
-            value: requests.filter((r) => r.status === "REPAID").length,
-            color: "var(--accent-green)",
-          },
-        ].map(({ label, value, color }) => (
-          <div
-            key={label}
-            className="stat-card"
-            style={{ cursor: "pointer" }}
-            onClick={() =>
-              setFilter(
-                label === "Total"
-                  ? "ALL"
-                  : (label.toUpperCase() as FinancingStatus),
-              )
-            }
-          >
+        {(isCustomer
+          ? [
+              {
+                label: "Total",
+                value: customerInvoices.length,
+                color: "var(--text-primary)",
+              },
+              {
+                label: "Pending Verification",
+                value: customerInvoices.filter((invoice) => invoice.status === "PENDING_VERIFICATION").length,
+                color: "var(--accent-amber)",
+              },
+              {
+                label: "Verified",
+                value: customerInvoices.filter((invoice) => invoice.status === "VERIFIED").length,
+                color: "var(--accent-cyan)",
+              },
+              {
+                label: "Funded",
+                value: customerInvoices.filter((invoice) => invoice.status === "FUNDED").length,
+                color: "var(--accent-purple)",
+              },
+              {
+                label: "Settled",
+                value: customerInvoices.filter((invoice) => invoice.status === "SETTLED").length,
+                color: "var(--accent-green)",
+              },
+            ]
+          : [
+              {
+                label: "Total",
+                value: requests.length,
+                color: "var(--text-primary)",
+              },
+              {
+                label: "Pending",
+                value: requests.filter((r) => r.status === "PENDING_ADMIN_REVIEW").length,
+                color: "var(--accent-amber)",
+              },
+              {
+                label: "Approved",
+                value: requests.filter((r) => r.status === "APPROVED").length,
+                color: "var(--accent-cyan)",
+              },
+              {
+                label: "Active",
+                value: requests.filter((r) => r.status === "BORROWED").length,
+                color: "var(--accent-purple)",
+              },
+              {
+                label: "Repaid",
+                value: requests.filter((r) => r.status === "REPAID").length,
+                color: "var(--accent-green)",
+              },
+            ]).map(({ label, value, color }) => (
+          <div key={label} className="stat-card">
             <div className="stat-card-label">{label}</div>
             <div className="stat-card-value" style={{ color }}>
               {value}
@@ -103,7 +403,6 @@ export function FinancingRequestsPage() {
         ))}
       </div>
 
-      {/* Filter + View Toggle */}
       <div className="panel" style={{ padding: "1rem 1.25rem" }}>
         <div
           style={{
@@ -115,7 +414,7 @@ export function FinancingRequestsPage() {
           }}
         >
           <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-            {STATUS_FILTERS.map((f) => (
+            {statusFilters.map((f) => (
               <button
                 key={f.value}
                 onClick={() => setFilter(f.value)}
@@ -165,24 +464,51 @@ export function FinancingRequestsPage() {
         </div>
       </div>
 
-      {/* Results */}
       <div style={{ marginTop: "1rem" }}>
-        {filtered.length === 0 ? (
+        {isCustomer ? (
+          invoiceQuery.isLoading ? (
+            <div className="empty-state">
+              <div className="empty-icon">⏳</div>
+              <p>Loading invoices assigned to your account…</p>
+            </div>
+          ) : customerInvoices.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">📭</div>
+              <p>No invoices assigned to your account match the selected filter.</p>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: "1rem" }}>
+              {customerInvoices.map((invoice) => (
+                <InvoiceCard
+                  key={invoice.id}
+                  invoice={invoice}
+                  onVerify={handleVerifyInvoice}
+                  onReject={handleRejectInvoice}
+                  onPay={handlePayInvoice}
+                />
+              ))}
+            </div>
+          )
+        ) : financingQuery.isLoading ? (
+          <div className="empty-state">
+            <div className="empty-icon">⏳</div>
+            <p>Loading financing requests…</p>
+          </div>
+        ) : requests.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">📭</div>
             <p>No requests match the selected filter.</p>
           </div>
         ) : view === "cards" ? (
           <div style={{ display: "grid", gap: "1rem" }}>
-            {filtered.map((r) => (
+            {requests.map((r) => (
               <FinancingRequestCard
                 key={r.id}
                 request={r}
                 role={role}
                 onApprove={handleApprove}
                 onReject={handleReject}
-                onBorrow={handleBorrow}
-                onRepay={handleRepay}
+                onBorrow={handleDisburse}
               />
             ))}
           </div>
@@ -200,10 +526,11 @@ export function FinancingRequestsPage() {
                     <th>Repayment</th>
                     <th>Due</th>
                     <th>Status</th>
+                    {isAdmin && <th>Action</th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((r) => (
+                  {requests.map((r) => (
                     <tr key={r.id}>
                       <td>
                         <span className="td-mono">{r.id}</span>
@@ -223,6 +550,27 @@ export function FinancingRequestsPage() {
                       <td>
                         <StatusBadge status={r.status} />
                       </td>
+                      {isAdmin && (
+                        <td>
+                          <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                            {r.status === "PENDING_ADMIN_REVIEW" && (
+                              <>
+                                <button className="btn btn-success btn-sm" onClick={() => handleApprove(r.id)}>
+                                  Approve
+                                </button>
+                                <button className="btn btn-danger btn-sm" onClick={() => handleReject(r.id)}>
+                                  Reject
+                                </button>
+                              </>
+                            )}
+                            {r.status === "APPROVED" && (
+                              <button className="btn btn-primary btn-sm" onClick={() => handleDisburse(r.id)}>
+                                Disburse
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -232,7 +580,7 @@ export function FinancingRequestsPage() {
         )}
       </div>
 
-      {toast && <div className="toast success">{toast}</div>}
+      {toastMessage && <div className="toast success">{toastMessage}</div>}
     </div>
   );
 }

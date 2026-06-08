@@ -69,9 +69,10 @@ router.get('/me', authenticate, async (req, res, next) => {
  *       403:
  *         description: Forbidden
  */
-router.get('/', authenticate, authorize(Role.ADMIN), async (_req, res, next) => {
+router.get('/', authenticate, authorize(Role.ADMIN, Role.BORROWER), async (req, res, next) => {
   try {
-    const users = await listUsers()
+    const role = req.query.role as Role | undefined
+    const users = await listUsers(role)
     res.json(successResponse('Users fetched successfully', users))
   } catch (error) {
     next(error)

@@ -1,4 +1,5 @@
 import { prisma } from '../../config/prisma'
+import { Role } from '@prisma/client'
 
 import { SafeUser, toSafeUser } from './user.model'
 
@@ -16,8 +17,11 @@ export async function findUserById(id: string): Promise<SafeUser | null> {
   return user ? toSafeUser(user) : null
 }
 
-export async function listUsers(): Promise<SafeUser[]> {
+export async function listUsers(role?: Role): Promise<SafeUser[]> {
+  const where = role ? { role } : undefined
+
   const users = await prisma.user.findMany({
+    where,
     orderBy: { createdAt: 'desc' },
   })
 

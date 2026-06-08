@@ -161,6 +161,7 @@ router.post('/withdraw', authenticate, authorize(Role.INVESTOR), validate(withdr
       authReq.user.id,
       authReq.user.role,
       req.body.shareAmount,
+      req.body.transactionHash,
     )
 
     res.json(successResponse('Pool withdrawal recorded successfully', payload))

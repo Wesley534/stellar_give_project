@@ -2,14 +2,10 @@ import { z } from 'zod'
 
 export const createInvoiceSchema = z.object({
   body: z.object({
-    customerName: z.string().min(2).max(120),
-    customerWalletAddress: z
-      .string()
-      .regex(/^G[A-Z0-9]{55}$/, 'Wallet address must be a valid Stellar public key')
-      .optional(),
+    customerId: z.string().min(1),
     invoiceNumber: z.string().min(1).max(100),
     invoiceAmount: z.number().positive(),
-    dueDate: z.iso.datetime(),
+    dueDate: z.string().datetime(),
   }),
 })
 

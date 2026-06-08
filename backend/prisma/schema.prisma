@@ -61,6 +61,7 @@ model User {
   poolDeposits              PoolDeposit[]
   poolTransactions          PoolTransaction[]
   suppliedInvoices          Invoice[]           @relation("SupplierInvoices")
+  customerInvoices          Invoice[]           @relation("CustomerInvoices")
   financingRequests         FinancingRequest[]  @relation("SupplierFinancingRequests")
   approvedFinancingRequests FinancingRequest[]  @relation("FinancingApprovedBy")
   customerSettlements       InvoiceSettlement[] @relation("CustomerSettlements")
@@ -84,6 +85,7 @@ model Wallet {
 model Invoice {
   id                    String         @id @default(cuid())
   supplierId            String
+  customerId            String?
   customerName          String
   customerWalletAddress String?
   invoiceNumber         String
@@ -94,10 +96,12 @@ model Invoice {
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
   supplier              User           @relation("SupplierInvoices", fields: [supplierId], references: [id], onDelete: Cascade)
+  customer              User?          @relation("CustomerInvoices", fields: [customerId], references: [id], onDelete: SetNull)
   financingRequest      FinancingRequest?
   settlement            InvoiceSettlement?
 
   @@unique([supplierId, invoiceNumber])
+  @@index([customerId, status])
 }
 
 model FinancingRequest {

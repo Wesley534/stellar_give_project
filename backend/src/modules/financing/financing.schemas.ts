@@ -22,6 +22,15 @@ export const reviewFinancingSchema = z.object({
   }),
 })
 
+export const finalizeDisbursementSchema = z.object({
+  params: z.object({
+    id: z.string().min(1),
+  }),
+  body: z.object({
+    transactionHash: z.string().min(64).max(64),
+  }),
+})
+
 export const listFinancingSchema = z.object({
   query: z.object({
     status: z.nativeEnum(FinancingStatus).optional(),

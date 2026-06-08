@@ -10,7 +10,7 @@ interface Props {
   onRepay?: (id: string) => void
 }
 
-export function FinancingRequestCard({ request, role, onApprove, onReject, onBorrow, onRepay }: Props) {
+export function FinancingRequestCard({ request, role, onApprove, onReject, onBorrow: _onBorrow, onRepay: _onRepay }: Props) {
   const interestRate = Math.round(((request.repaymentAmount - request.borrowAmount) / request.borrowAmount) * 100)
 
   return (
@@ -53,11 +53,18 @@ export function FinancingRequestCard({ request, role, onApprove, onReject, onBor
             <button className="btn btn-danger btn-sm" onClick={() => onReject?.(request.id)}>✗ Reject</button>
           </>
         )}
+        {role === 'ADMIN' && request.status === 'APPROVED' && (
+          <button className="btn btn-primary btn-sm" onClick={() => _onBorrow?.(request.id)}>⚡ Disburse Funds</button>
+        )}
         {role === 'BORROWER' && request.status === 'APPROVED' && (
-          <button className="btn btn-primary btn-sm" onClick={() => onBorrow?.(request.id)}>⚡ Borrow Funds</button>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+            Admin approval complete. Awaiting fund disbursement.
+          </span>
         )}
         {role === 'BORROWER' && request.status === 'BORROWED' && (
-          <button className="btn btn-purple btn-sm" onClick={() => onRepay?.(request.id)}>💰 Repay Loan</button>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+            Funds disbursed to your saved wallet. Customer payment will settle this request.
+          </span>
         )}
       </div>
 

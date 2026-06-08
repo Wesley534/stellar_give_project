@@ -128,8 +128,10 @@ export async function getPoolInfo() {
     ledger.outstandingPrincipal
   const totalInterestEarned =
     parseOnChainI128(onChainOutput?.total_interest_earned) ?? ledger.totalInterestEarned
-  const totalPlatformFees =
-    parseOnChainI128(onChainOutput?.total_platform_fees) ?? ledger.totalPlatformFees
+  // Platform fees are recorded in the app ledger when settlements complete.
+  // The current contract read may not reflect those treasury accruals yet, so
+  // prefer the ledger total to keep admin reporting accurate.
+  const totalPlatformFees = ledger.totalPlatformFees
 
   return {
     totalLiquidity,
@@ -471,8 +473,10 @@ export async function withdrawFromPool(
   userId: string,
   role: Role,
   shareAmount: number,
+  transactionHash: string,
 ) {
   assertInvestor(role)
+  validateTestnetDeposit(transactionHash)
 
   const [wallet, poolInfo, investorPosition] = await Promise.all([
     requirePrimaryWallet(userId),
@@ -494,7 +498,6 @@ export async function withdrawFromPool(
     throw new AppError('Insufficient available liquidity for this withdrawal', 400)
   }
 
-  const transactionHash = buildTransactionHash('withdraw_liquidity', userId)
   const withdrawal = await prisma.poolTransaction.create({
     data: {
       type: PoolTransactionType.WITHDRAWAL,
