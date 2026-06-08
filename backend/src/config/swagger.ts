@@ -15,7 +15,7 @@ const swaggerSpec = swaggerJSDoc({
     },
     servers: [
       {
-        url: `http://localhost:${env.PORT}`,
+        url: `https://stellar-give-project.onrender.com/api:${env.PORT}`,
       },
     ],
     tags: [
