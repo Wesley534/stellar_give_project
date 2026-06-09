@@ -136,14 +136,7 @@ By unlocking cash tied up in invoices, businesses can:
 
 The solution is particularly relevant for SMEs across Africa, where invoice payment cycles of 30–90 days are common and formal financing access is limited.
 
-## Screenshots
 
-- Investor Dashboard showing pool position, deposit/withdraw panels, and earnings
-- Liquidity Pool page with utilization visualization and funding history
-- Invoice Creation form with customer selection and due date
-- Invoice Verification view for customers with verify/reject actions
-- Financing Approval queue for administrators with approve/reject/disburse controls
-- Settlement Dashboard showing repayment breakdown and surplus distribution
 
 ## Local Setup
 
